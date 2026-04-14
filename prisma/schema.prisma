@@ -1,0 +1,43 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Document {
+  id           String       @id @default(cuid())
+  name         String
+  aliasName    String       @default("")
+  type         DocumentType
+  originalName String
+  filePath     String
+  pdfPath      String
+  pageCount    Int
+  sortOrder    Int          @default(0)
+  createdAt    DateTime     @default(now())
+  annotations  Annotation[]
+}
+
+model Annotation {
+  id               String   @id @default(cuid())
+  documentId       String
+  document         Document @relation(fields: [documentId], references: [id])
+  page             Int
+  x                Float
+  y                Float
+  width            Float
+  height           Float
+  type             String
+  category         String?
+  comment          String?
+  linkedDocumentId String?
+  createdAt        DateTime @default(now())
+}
+
+enum DocumentType {
+  BANK
+  INVOICE
+}

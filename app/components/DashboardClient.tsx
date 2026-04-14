@@ -1,7 +1,6 @@
 "use client";
 
-import { FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { DocumentModel, DocumentType, documents } from "../lib/documents";
+import { ChangeEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 type UserRole = "Admin" | "Viewer";
 type UserSession = {
@@ -30,6 +29,18 @@ type DraftAnnotation = Omit<Annotation, "x" | "y" | "width" | "height"> & {
   height: number;
 };
 
+type DocumentType = "BANK" | "INVOICE";
+
+type DocumentModel = {
+  id: string;
+  name: string;
+  aliasName: string;
+  type: DocumentType;
+  filePath: string;
+  pageCount: number;
+  createdAt: string;
+};
+
 const MIN_ANNOTATION_SIZE = 20;
 
 const sectionName: Record<DocumentType, string> = {
@@ -42,15 +53,23 @@ export default function DashboardClient() {
   const [role, setRole] = useState<UserRole>("Viewer");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [documents, setDocuments] = useState<DocumentModel[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [drawingRect, setDrawingRect] = useState<DraftAnnotation | null>(null);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
+  const [isLoadingAnnotations, setIsLoadingAnnotations] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
+  const [editingAlias, setEditingAlias] = useState("");
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const fullscreenIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!isFullscreenOpen) return;
@@ -119,9 +138,49 @@ export default function DashboardClient() {
     setIsFullscreenOpen(false);
   };
 
+  const loadDocuments = async () => {
+    setIsLoadingDocuments(true);
+    const response = await fetch("/api/documents");
+    if (!response.ok) {
+      setIsLoadingDocuments(false);
+      return;
+    }
+
+    const data = (await response.json()) as DocumentModel[];
+    setDocuments(data);
+    setIsLoadingDocuments(false);
+  };
+
+  useEffect(() => {
+    loadDocuments();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setAnnotations([]);
+      return;
+    }
+
+    const loadAnnotations = async () => {
+      setIsLoadingAnnotations(true);
+      const response = await fetch(`/api/annotations?documentId=${selectedId}&page=${currentPage}`);
+      if (!response.ok) {
+        setIsLoadingAnnotations(false);
+        return;
+      }
+
+      const data = (await response.json()) as Annotation[];
+      setAnnotations(data);
+      setSelectedAnnotationId(null);
+      setIsLoadingAnnotations(false);
+    };
+
+    loadAnnotations();
+  }, [selectedId, currentPage]);
+
   const selectedItem = useMemo(
     () => (selectedId ? documents.find((document) => document.id === selectedId) ?? null : null),
-    [selectedId]
+    [selectedId, documents]
   );
 
   const currentDocumentAnnotations = useMemo(
@@ -169,12 +228,12 @@ export default function DashboardClient() {
         groups[section].push(document);
         return groups;
       }, {}),
-    []
+    [documents]
   );
 
   const invoiceDocuments = useMemo(
     () => documents.filter((document) => document.type === "INVOICE"),
-    []
+    [documents]
   );
 
   useEffect(() => {
@@ -199,6 +258,66 @@ export default function DashboardClient() {
 
   const handleLogout = () => {
     setUser(null);
+  };
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFilesSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files?.length) {
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      const formData = new FormData();
+      Array.from(files).forEach((file) => formData.append("files", file));
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        setUploadError(errorData?.error || "Upload failed.");
+        return;
+      }
+
+      await loadDocuments();
+    } catch (error) {
+      setUploadError("Upload failed.");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleDocumentRename = async (documentId: string, aliasName: string) => {
+    const trimmed = aliasName.trim();
+    if (!trimmed) {
+      return;
+    }
+
+    const response = await fetch(`/api/documents/${documentId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ aliasName: trimmed }),
+    });
+
+    if (!response.ok) {
+      return;
+    }
+
+    setEditingDocumentId(null);
+    setEditingAlias("");
+    await loadDocuments();
   };
 
   const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
@@ -237,7 +356,7 @@ export default function DashboardClient() {
     );
   };
 
-  const commitAnnotation = () => {
+  const commitAnnotation = async () => {
     if (!drawingRect || !selectedId) {
       setDrawingRect(null);
       setStartPoint(null);
@@ -262,9 +381,7 @@ export default function DashboardClient() {
         ? "COMMENT"
         : "NOT_RELEVANT";
 
-    const nextAnnotation: Annotation = {
-      ...drawingRect,
-      id: `annotation-${Date.now()}`,
+    const payload = {
       documentId: selectedId,
       page: currentPage,
       x: Math.max(0, Math.min(1, drawingRect.x)),
@@ -287,8 +404,21 @@ export default function DashboardClient() {
       linkedDocumentId: undefined,
     };
 
-    setAnnotations((current) => [...current, nextAnnotation]);
-    setSelectedAnnotationId(nextAnnotation.id);
+    const response = await fetch("/api/annotations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      setDrawingRect(null);
+      setStartPoint(null);
+      return;
+    }
+
+    const createdAnnotation = (await response.json()) as Annotation;
+    setAnnotations((current) => [...current, createdAnnotation]);
+    setSelectedAnnotationId(createdAnnotation.id);
     setDrawingRect(null);
     setStartPoint(null);
   };
@@ -305,18 +435,34 @@ export default function DashboardClient() {
     }
   };
 
-  const handleAnnotationDelete = (annotationId: string) => {
+  const handleAnnotationDelete = async (annotationId: string) => {
+    const response = await fetch(`/api/annotations/${annotationId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) return;
+
     setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
     if (selectedAnnotationId === annotationId) {
       setSelectedAnnotationId(null);
     }
   };
 
-  const updateSelectedAnnotation = (updates: Partial<Omit<Annotation, "id" | "x" | "y" | "width" | "height">>) => {
+  const updateSelectedAnnotation = async (updates: Partial<Omit<Annotation, "id" | "x" | "y" | "width" | "height">>) => {
     if (!selectedAnnotationId) return;
+
+    const response = await fetch(`/api/annotations/${selectedAnnotationId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+
+    if (!response.ok) return;
+
+    const updatedAnnotation = (await response.json()) as Annotation;
     setAnnotations((current) =>
       current.map((annotation) =>
-        annotation.id === selectedAnnotationId ? { ...annotation, ...updates } : annotation
+        annotation.id === selectedAnnotationId ? updatedAnnotation : annotation
       )
     );
   };
@@ -400,6 +546,27 @@ export default function DashboardClient() {
               {isAdmin ? "Admin access" : "Viewer access"}
             </span>
           </div>
+          {isAdmin ? (
+            <div className="mt-5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleUploadClick}
+                disabled={isUploading}
+                className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-60"
+              >
+                {isUploading ? "Uploading…" : "Upload PDFs"}
+              </button>
+              {uploadError ? <p className="text-sm text-red-600">{uploadError}</p> : null}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="application/pdf"
+                multiple
+                className="hidden"
+                onChange={handleFilesSelected}
+              />
+            </div>
+          ) : null}
           <div className="mt-5 space-y-5">
             {Object.entries(groupedDocuments).map(([section, sectionItems]) => (
               <div key={section}>
@@ -407,17 +574,53 @@ export default function DashboardClient() {
                 <ul className="mt-3 space-y-2 border-l border-zinc-200 pl-4 text-sm text-zinc-700">
                   {sectionItems.map((item) => (
                     <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedId(item.id)}
-                        className={`w-full rounded-2xl px-3 py-2 text-left text-sm transition ${
-                          selectedId === item.id
-                            ? "bg-slate-900 text-white"
-                            : "text-zinc-700 hover:text-slate-900 hover:bg-zinc-100"
-                        }`}
-                      >
-                        {item.name}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {editingDocumentId === item.id ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingAlias}
+                            onChange={(event) => setEditingAlias(event.target.value)}
+                            onBlur={() => handleDocumentRename(item.id, editingAlias)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                handleDocumentRename(item.id, editingAlias);
+                              }
+                            }}
+                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedId(item.id);
+                              setSelectedAnnotationId(null);
+                              setCurrentPage(1);
+                            }}
+                            className={`w-full rounded-2xl px-3 py-2 text-left text-sm transition ${
+                              selectedId === item.id
+                                ? "bg-slate-900 text-white"
+                                : "text-zinc-700 hover:text-slate-900 hover:bg-zinc-100"
+                            }`}
+                          >
+                            {item.aliasName}
+                          </button>
+                        )}
+                        {isAdmin && editingDocumentId !== item.id ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingDocumentId(item.id);
+                              setEditingAlias(item.aliasName);
+                            }}
+                            className="rounded-full px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100"
+                            aria-label={`Rename ${item.aliasName}`}
+                          >
+                            ✏️
+                          </button>
+                        ) : null}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -432,7 +635,7 @@ export default function DashboardClient() {
               <p className="text-sm font-medium uppercase tracking-[0.18em] text-zinc-500">
                 Document viewer
               </p>
-              <h2 className="mt-2 text-2xl font-semibold">{selectedItem ? selectedItem.name : "Select a document"}</h2>
+              <h2 className="mt-2 text-2xl font-semibold">{selectedItem ? selectedItem.aliasName : "Select a document"}</h2>
               <p className="mt-2 text-sm text-zinc-600">
                 {selectedItem ? (selectedItem.type === "BANK" ? "Bank document preview" : "Invoice preview") : "Choose a document from the left to start."}
               </p>
@@ -494,8 +697,8 @@ export default function DashboardClient() {
                 <>
                   <img
                     ref={imgRef}
-                    src={`/mock-pages/${selectedId}-page-${currentPage}.svg`}
-                    alt={`${selectedItem.name} page ${currentPage}`}
+                    src={`/api/documents/${selectedId}/page/${currentPage}`}
+                    alt={`${selectedItem.aliasName} page ${currentPage}`}
                     className="w-full h-auto object-contain block"
                     onLoad={() => {
                       if (!imgRef.current) return;
@@ -598,8 +801,8 @@ export default function DashboardClient() {
                 <p className="font-semibold text-zinc-900">Current document</p>
                 {selectedItem ? (
                   <>
-                    <p className="mt-1 text-zinc-700">{selectedItem.name}</p>
-                    <p className="mt-1 text-sm text-zinc-500">{selectedItem.date}</p>
+                    <p className="mt-1 text-zinc-700">{selectedItem.aliasName}</p>
+                    <p className="mt-1 text-sm text-zinc-500">{selectedItem.pageCount} page(s)</p>
                   </>
                 ) : (
                   <p className="mt-1 text-zinc-500">Select a document from the left panel to view details.</p>
@@ -687,7 +890,7 @@ export default function DashboardClient() {
                         <div>
                           <p className="font-semibold text-zinc-900">Linked invoice</p>
                           <p className="mt-1 text-zinc-700">{linkedDocument.name}</p>
-                          <p className="mt-1 text-sm text-zinc-500">{linkedDocument.date}</p>
+                          <p className="mt-1 text-sm text-zinc-500">{linkedDocument.pageCount} page(s)</p>
                         </div>
                       ) : (
                         <div className="text-zinc-500">No document linked</div>
