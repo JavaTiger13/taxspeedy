@@ -1005,9 +1005,11 @@ export default function DashboardClient() {
                           ? "border-red-400"
                           : "border-zinc-400";
                       
-                      const isSelectedDropZone =
+                      const isDraggableAnnotation =
                         annotation.id === selectedAnnotationId &&
-                        isAdmin &&
+                        isAdmin;
+                      const isSelectedDropZone =
+                        isDraggableAnnotation &&
                         (annotation.type === "DOCUMENT" || annotation.type === "INVOICE");
                       const dropClasses = isSelectedDropZone && isAnnotationDropActive
                         ? "border-orange-500 bg-orange-400/15 shadow-[0_0_20px_rgba(249,115,22,0.18)]"
@@ -1047,14 +1049,14 @@ export default function DashboardClient() {
                                   event.stopPropagation();
                                   handleAnnotationDelete(annotation.id);
                                 }}
-                                className="absolute -right-3 -top-3 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs font-bold text-zinc-700 opacity-0 shadow transition-opacity duration-150 hover:bg-red-500 hover:text-white group-hover:opacity-100"
+                                className="absolute right-1 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs font-bold text-zinc-700 opacity-0 shadow transition-opacity duration-150 hover:bg-red-500 hover:text-white group-hover:opacity-100"
                               >
                                 ×
                               </button>
                               <button
                                 type="button"
                                 onMouseDown={(event) => {
-                                  if (event.button !== 0 || !isSelectedDropZone) return;
+                                  if (event.button !== 0 || !isDraggableAnnotation) return;
                                   event.stopPropagation();
                                   event.preventDefault();
                                   const rect = imgRef.current?.getBoundingClientRect();
@@ -1070,7 +1072,7 @@ export default function DashboardClient() {
                                   setIsDraggingAnnotation(true);
                                   setIsAnnotationDropActive(false);
                                 }}
-                                className={`absolute left-2 top-2 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs text-zinc-700 shadow transition duration-150 ${
+                                className={`absolute right-8 top-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs text-zinc-700 shadow transition duration-150 opacity-0 group-hover:opacity-100 ${
                                   isDraggingAnnotation ? "cursor-grabbing" : "cursor-grab"
                                 } hover:bg-slate-100`}
                                 aria-label="Drag annotation"
