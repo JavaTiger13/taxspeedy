@@ -225,6 +225,7 @@ export default function DashboardClient() {
     setCategoryInput(selectedAnnotation?.category ?? "");
     setCommentInput(selectedAnnotation?.comment ?? "");
     setSaveStatus("saved");
+    setIsAnnotationDropActive(false);
   }, [selectedAnnotation?.id]);
 
   const annotationTypeLabel: Record<Annotation["type"], string> = {
@@ -479,8 +480,8 @@ export default function DashboardClient() {
       width: 0,
       height: 0,
       type: "INVOICE",
-      category: "Invoice note",
-      comment: "New invoice annotation",
+      category: "",
+      comment: "",
       linkedDocumentId: undefined,
     });
   };
@@ -525,8 +526,8 @@ export default function DashboardClient() {
       width: Math.max(0, Math.min(1, drawingRect.width)),
       height: Math.max(0, Math.min(1, drawingRect.height)),
       type: drawingRect.type || "INVOICE",
-      category: drawingRect.category || "Invoice note",
-      comment: drawingRect.comment || "New invoice annotation",
+      category: drawingRect.category,
+      comment: drawingRect.comment,
       linkedDocumentId: undefined,
     };
 
@@ -948,21 +949,17 @@ export default function DashboardClient() {
                         isAdmin &&
                         (annotation.type === "DOCUMENT" || annotation.type === "INVOICE");
                       const dropClasses = isSelectedDropZone && isAnnotationDropActive
-                        ? "border-rose-500 bg-rose-500/15"
+                        ? "border-amber-400 bg-amber-300/15 shadow-[0_0_20px_rgba(251,191,36,0.18)]"
                         : "";
 
                       return (
                         <div
                           key={annotation.id}
                           className={`group absolute rounded-sm border-2 ${annotationClasses} ${dropClasses} transition cursor-pointer`}
-                          onDragEnter={(event) => {
-                            if (!isSelectedDropZone) return;
-                            event.preventDefault();
-                            setIsAnnotationDropActive(true);
-                          }}
                           onDragOver={(event) => {
                             if (!isSelectedDropZone) return;
                             event.preventDefault();
+                            setIsAnnotationDropActive(true);
                           }}
                           onDragLeave={() => {
                             if (!isSelectedDropZone) return;
@@ -992,7 +989,7 @@ export default function DashboardClient() {
                             ×
                           </button>
                           {isSelectedDropZone && isAnnotationDropActive ? (
-                            <div className="absolute inset-0 flex items-center justify-center rounded-sm bg-white/80 text-xs font-semibold text-rose-600">
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-sm bg-white/75 text-xs font-semibold text-amber-700">
                               Drop invoice here
                             </div>
                           ) : null}
@@ -1109,6 +1106,7 @@ export default function DashboardClient() {
                                 </label>
                                 <input
                                     type="text"
+                                    placeholder="Type a category"
                                     value={categoryInput}
                                     onChange={(event) => {
                                       setCategoryInput(event.target.value);
@@ -1123,6 +1121,7 @@ export default function DashboardClient() {
                                 Comment
                             </label>
                             <textarea
+                            placeholder="Type a comment"
                             value={commentInput}
                             onChange={(event) => {
                               setCommentInput(event.target.value);
