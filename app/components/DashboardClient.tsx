@@ -938,24 +938,32 @@ export default function DashboardClient() {
                     {currentDocumentAnnotations.map((annotation) => {
                       const renderWidth = imageSize.width || 1;
                       const renderHeight = imageSize.height || 1;
-                      const annotationClasses =
+                      const baseAnnotationClasses =
+                        annotation.type === "NOT_RELEVANT"
+                          ? "bg-slate-900/10"
+                          : annotation.type === "COMMENT"
+                          ? "bg-yellow-300/20"
+                          : annotation.type === "INVOICE"
+                          ? "bg-blue-400/20 "
+                          : "bg-cyan-500/10";
+                      
+                      const selectedClasses =
                         selectedAnnotationId === annotation.id
-                          ? "border-fuchsia-500 bg-fuchsia-500/15"
-                          : annotation.type === "NOT_RELEVANT"
-                          ? "border-zinc-400 bg-slate-900/10 hover:border-zinc-500"
-                          : "border-cyan-500/80 hover:border-slate-900 bg-cyan-500/10";
+                          ? "border-red-400"
+                          : "border-zinc-400";
+                      
                       const isSelectedDropZone =
                         annotation.id === selectedAnnotationId &&
                         isAdmin &&
                         (annotation.type === "DOCUMENT" || annotation.type === "INVOICE");
                       const dropClasses = isSelectedDropZone && isAnnotationDropActive
-                        ? "border-amber-400 bg-amber-300/15 shadow-[0_0_20px_rgba(251,191,36,0.18)]"
+                        ? "border-orange-500 bg-orange-400/15 shadow-[0_0_20px_rgba(249,115,22,0.18)]"
                         : "";
 
                       return (
                         <div
                           key={annotation.id}
-                          className={`group absolute rounded-sm border-2 ${annotationClasses} ${dropClasses} transition cursor-pointer`}
+                          className={`group absolute rounded-sm border-2 hover:border-amber-400 ${baseAnnotationClasses} ${selectedClasses} ${dropClasses} transition cursor-pointer`}
                           onDragOver={(event) => {
                             if (!isSelectedDropZone) return;
                             event.preventDefault();
@@ -1112,7 +1120,7 @@ export default function DashboardClient() {
                                       setCategoryInput(event.target.value);
                                       scheduleAnnotationUpdate({ category: event.target.value });
                                     }}
-                                    className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 bg-white outline-none"
+                                    className="mt-2 w-full rounded-2xl border border-zinc-200 px-3 py-2 text-sm text-zinc-900 bg-white outline-none"
                                 />
                             </div>
                         </div>
