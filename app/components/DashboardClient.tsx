@@ -65,6 +65,13 @@ export default function DashboardClient() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [annotationUploadError, setAnnotationUploadError] = useState<string | null>(null);
   const [isAnnotationDropActive, setIsAnnotationDropActive] = useState(false);
+  const [isDraggingAnnotation, setIsDraggingAnnotation] = useState(false);
+  const dragStartRef = useRef<{
+    startX: number;
+    startY: number;
+    origX: number;
+    origY: number;
+  } | null>(null);
   const [categoryInput, setCategoryInput] = useState("");
   const [commentInput, setCommentInput] = useState("");
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
@@ -438,6 +445,11 @@ export default function DashboardClient() {
   };
 
   const handleAnnotationDrop = async (event: DragEvent<HTMLDivElement>) => {
+    if (isDraggingAnnotation) {
+      setIsAnnotationDropActive(false);
+      return;
+    }
+
     if (!isAdmin || !selectedAnnotation || selectedAnnotation.id !== selectedAnnotationId) {
       setIsAnnotationDropActive(false);
       return;
@@ -465,7 +477,7 @@ export default function DashboardClient() {
   };
 
   const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !selectedId) return;
+    if (event.button !== 0 || !selectedId || isDraggingAnnotation) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
@@ -487,6 +499,32 @@ export default function DashboardClient() {
   };
 
   const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    if (isDraggingAnnotation && selectedAnnotation && dragStartRef.current) {
+      const rect = imgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const currentX = (event.clientX - rect.left) / rect.width;
+      const currentY = (event.clientY - rect.top) / rect.height;
+      const dx = currentX - dragStartRef.current.startX;
+      const dy = currentY - dragStartRef.current.startY;
+      const newX = Math.min(
+        Math.max(0, dragStartRef.current.origX + dx),
+        1 - selectedAnnotation.width
+      );
+      const newY = Math.min(
+        Math.max(0, dragStartRef.current.origY + dy),
+        1 - selectedAnnotation.height
+      );
+      setAnnotations((current) =>
+        current.map((annotation) =>
+          annotation.id === selectedAnnotation.id
+            ? { ...annotation, x: newX, y: newY }
+            : annotation
+        )
+      );
+      return;
+    }
+
     if (!startPoint) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const currentX = (event.clientX - rect.left) / rect.width;
@@ -552,7 +590,22 @@ export default function DashboardClient() {
 
   const pageAnnotationCount = currentDocumentAnnotations.length;
 
-  const handleMouseUp = () => {
+  const handleMouseUp = async () => {
+    if (isDraggingAnnotation) {
+      setIsDraggingAnnotation(false);
+      dragStartRef.current = null;
+      if (selectedAnnotationId) {
+        const finalAnnotation = annotations.find((annotation) => annotation.id === selectedAnnotationId);
+        if (finalAnnotation) {
+          await updateSelectedAnnotation(
+            { x: finalAnnotation.x, y: finalAnnotation.y },
+            selectedAnnotationId
+          );
+        }
+      }
+      return;
+    }
+
     commitAnnotation();
   };
 
@@ -576,7 +629,7 @@ export default function DashboardClient() {
   };
 
   const updateSelectedAnnotation = async (
-    updates: Partial<Omit<Annotation, "id" | "x" | "y" | "width" | "height">>,
+    updates: Partial<Omit<Annotation, "id" | "width" | "height">>,
     annotationId: string | null = selectedAnnotationId
   ) => {
     if (!annotationId) return false;
@@ -986,16 +1039,46 @@ export default function DashboardClient() {
                             height: annotation.height * renderHeight,
                           }}
                         >
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleAnnotationDelete(annotation.id);
-                            }}
-                            className="absolute -right-3 -top-3 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs font-bold text-zinc-700 opacity-0 shadow transition-opacity duration-150 hover:bg-red-500 hover:text-white group-hover:opacity-100"
-                          >
-                            ×
-                          </button>
+                          {isAdmin ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleAnnotationDelete(annotation.id);
+                                }}
+                                className="absolute -right-3 -top-3 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs font-bold text-zinc-700 opacity-0 shadow transition-opacity duration-150 hover:bg-red-500 hover:text-white group-hover:opacity-100"
+                              >
+                                ×
+                              </button>
+                              <button
+                                type="button"
+                                onMouseDown={(event) => {
+                                  if (event.button !== 0 || !isSelectedDropZone) return;
+                                  event.stopPropagation();
+                                  event.preventDefault();
+                                  const rect = imgRef.current?.getBoundingClientRect();
+                                  if (!rect) return;
+                                  const startX = (event.clientX - rect.left) / rect.width;
+                                  const startY = (event.clientY - rect.top) / rect.height;
+                                  dragStartRef.current = {
+                                    startX,
+                                    startY,
+                                    origX: annotation.x,
+                                    origY: annotation.y,
+                                  };
+                                  setIsDraggingAnnotation(true);
+                                  setIsAnnotationDropActive(false);
+                                }}
+                                className={`absolute left-2 top-2 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs text-zinc-700 shadow transition duration-150 ${
+                                  isDraggingAnnotation ? "cursor-grabbing" : "cursor-grab"
+                                } hover:bg-slate-100`}
+                                aria-label="Drag annotation"
+                              >
+                                ≡
+                              </button>
+                            </>
+                          ) : null}
                           {isSelectedDropZone && isAnnotationDropActive ? (
                             <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-sm bg-white/75 text-xs font-semibold text-amber-700">
                               Drop invoice here
