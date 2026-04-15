@@ -19,7 +19,7 @@ type Annotation = {
   type: "DOCUMENT" | "INVOICE" | "COMMENT" | "NOT_RELEVANT";
   category: string;
   comment: string;
-  linkedDocumentId?: string;
+  linkedDocumentId?: string | null;
 };
 
 type DraftAnnotation = Omit<Annotation, "x" | "y" | "width" | "height"> & {
@@ -556,6 +556,25 @@ export default function DashboardClient() {
     );
   };
 
+  const handleUnlinkAnnotation = async () => {
+    if (!selectedAnnotationId) return;
+
+    const response = await fetch(`/api/annotations/${selectedAnnotationId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkedDocumentId: null }),
+    });
+
+    if (!response.ok) return;
+
+    const updatedAnnotation = (await response.json()) as Annotation;
+    setAnnotations((current) =>
+      current.map((annotation) =>
+        annotation.id === selectedAnnotationId ? updatedAnnotation : annotation
+      )
+    );
+  };
+
   const linkedDocument = selectedAnnotation
     ? documents.find((document) => document.id === selectedAnnotation.linkedDocumentId)
     : null;
@@ -913,22 +932,18 @@ export default function DashboardClient() {
             <div>
               <h2 className="text-lg font-semibold">Invoice preview</h2>
               <p className="mt-1 text-sm text-zinc-600">
-                Upload an invoice from annotation details to link it and inspect it here.
+                {selectedItem ? (
+                  <>
+                    <p className="mt-1 text-zinc-700">Current Document: {selectedItem.aliasName} / {selectedItem.pageCount} page(s)</p>
+                  </>
+                ) : (
+                  <p className="mt-1 text-zinc-500">Select a document from the left panel to view details.</p>
+                )}
               </p>
             </div>
           </div>
           <div className="mt-5 rounded-3xl bg-zinc-50 p-4 text-sm text-zinc-600">
             <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-              <div className="mb-4 rounded-2xl bg-zinc-100 p-3 text-sm text-zinc-700">
-                <p className="font-semibold text-zinc-900">Current document</p>
-                {selectedItem ? (
-                  <>
-                    <p className="mt-1 text-zinc-700">{selectedItem.aliasName} / {selectedItem.pageCount} page(s)</p>
-                  </>
-                ) : (
-                  <p className="mt-1 text-zinc-500">Select a document from the left panel to view details.</p>
-                )}
-              </div>
               {!selectedAnnotation ? (
                 <>
                   <p className="font-semibold text-zinc-900">No annotation selected</p>
@@ -983,36 +998,6 @@ export default function DashboardClient() {
                           className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
                         />
                       </div>
-
-                      <div>
-                        {selectedAnnotation.type === "DOCUMENT" ? (
-                          <div className="space-y-3">
-                            <button
-                              type="button"
-                              onClick={openAnnotationInvoicePicker}
-                              disabled={isUploading}
-                              className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500"
-                            >
-                              {isUploading ? "Uploading…" : "Upload Invoice"}
-                            </button>
-                            {annotationUploadError ? (
-                              <p className="text-sm text-red-600">{annotationUploadError}</p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-zinc-100 p-3 text-sm text-zinc-700">
-                      {linkedDocument ? (
-                        <div className="space-y-2">
-                          <p className="font-semibold text-zinc-900">Linked invoice</p>
-                          <p className="text-sm text-zinc-700">{linkedDocument.aliasName || linkedDocument.name}</p>
-                          <p className="text-xs text-zinc-500">{linkedDocument.pageCount} page(s)</p>
-                        </div>
-                      ) : (
-                        <div className="text-zinc-500">No invoice linked yet.</div>
-                      )}
                     </div>
 
                     <div className="rounded-3xl border border-zinc-200 bg-white p-0 text-sm text-zinc-700">
@@ -1020,8 +1005,37 @@ export default function DashboardClient() {
                         <div className="space-y-1">
                           <p className="text-sm font-semibold text-zinc-900">Preview</p>
                           <p className="text-xs text-zinc-500">Open, download, or print the linked invoice.</p>
+                          {linkedDocument ? (
+                            <p className="text-sm text-zinc-700">{linkedDocument.aliasName || linkedDocument.name} / <span className="text-xs text-zinc-500">{linkedDocument.pageCount} page(s)</span></p>
+                          ) : (
+                            <div className="text-zinc-500">No invoice or document linked yet.</div>
+                          )}
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
+                            {((selectedAnnotation.type === "DOCUMENT" || selectedAnnotation.type === "INVOICE") && isAdmin) ? (
+                            <div className="space-y-3">
+                                <button
+                                type="button"
+                                onClick={openAnnotationInvoicePicker}
+                                disabled={isUploading}
+                                className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                                >
+                                {isUploading ? "Uploading…" : "Upload"}
+                                </button>
+                                {annotationUploadError ? (
+                                <p className="text-sm text-red-600">{annotationUploadError}</p>
+                                ) : null}
+                            </div>
+                            ) : null }
+                          {isAdmin && linkedDocument ? (
+                            <button
+                              type="button"
+                              onClick={handleUnlinkAnnotation}
+                              className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-50"
+                            >
+                              Unlink
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={openFullscreen}
@@ -1063,12 +1077,13 @@ export default function DashboardClient() {
                         </div>
                       )}
                     </div>
-
-                    <div className="rounded-2xl bg-zinc-100 p-3 text-xs text-zinc-600">
-                      Position: {(selectedAnnotation.x * 100).toFixed(1)}%, {(selectedAnnotation.y * 100).toFixed(1)}%
-                      <br />
-                      Size: {(selectedAnnotation.width * 100).toFixed(1)}% x {(selectedAnnotation.height * 100).toFixed(1)}%
+                    {isAdmin ? (
+                        <div className="rounded-2xl bg-zinc-100 p-3 text-xs text-zinc-600">
+                        Position: {(selectedAnnotation.x * 100).toFixed(1)}%, {(selectedAnnotation.y * 100).toFixed(1)}%
+                        <br />
+                        Size: {(selectedAnnotation.width * 100).toFixed(1)}% x {(selectedAnnotation.height * 100).toFixed(1)}%
                     </div>
+                    ) : ''}
                   </div>
                 </>
               )}
