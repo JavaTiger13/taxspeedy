@@ -209,6 +209,13 @@ export default function DashboardClient() {
     [currentDocumentAnnotations, selectedAnnotationId]
   );
 
+  const annotationTypeLabel: Record<Annotation["type"], string> = {
+    DOCUMENT: "Document",
+    INVOICE: "Invoice",
+    COMMENT: "Comment",
+    NOT_RELEVANT: "Not relevant",
+  };
+
   const currentPageCount = selectedItem?.pageCount ?? 1;
 
   const pageList = useMemo(
@@ -424,9 +431,9 @@ export default function DashboardClient() {
       y,
       width: 0,
       height: 0,
-      type: "DOCUMENT",
-      category: "Review",
-      comment: "New annotation",
+      type: "INVOICE",
+      category: "Invoice note",
+      comment: "New invoice annotation",
       linkedDocumentId: undefined,
     });
   };
@@ -463,13 +470,6 @@ export default function DashboardClient() {
       return;
     }
 
-    const nextType: Annotation["type"] =
-      annotations.length % 3 === 0
-        ? "DOCUMENT"
-        : annotations.length % 3 === 1
-        ? "COMMENT"
-        : "NOT_RELEVANT";
-
     const payload = {
       documentId: selectedId,
       page: currentPage,
@@ -477,19 +477,9 @@ export default function DashboardClient() {
       y: Math.max(0, Math.min(1, drawingRect.y)),
       width: Math.max(0, Math.min(1, drawingRect.width)),
       height: Math.max(0, Math.min(1, drawingRect.height)),
-      type: nextType,
-      category:
-        annotations.length % 3 === 0
-          ? "Bank entry"
-          : annotations.length % 3 === 1
-          ? "Invoice note"
-          : "Review",
-      comment:
-        annotations.length % 3 === 0
-          ? "Review this bank area"
-          : annotations.length % 3 === 1
-          ? "Check invoice detail"
-          : "Mark as not relevant",
+      type: drawingRect.type || "INVOICE",
+      category: drawingRect.category || "Invoice note",
+      comment: drawingRect.comment || "New invoice annotation",
       linkedDocumentId: undefined,
     };
 
@@ -829,7 +819,11 @@ export default function DashboardClient() {
           </div>
 
           <div className="mt-6 rounded-3xl border-2 border-dashed border-zinc-200 bg-zinc-50 p-5">
-            <div className="text-sm font-medium text-zinc-900">Draw annotations on the placeholder page</div>
+            <div className="text-sm font-medium text-zinc-900">
+                {isAdmin
+                  ? "Draw annotations on the placeholder page"
+                  : "Click on annotations to get more details"}
+                </div>
             <div className="relative mt-4 mx-auto max-w-full overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm">
               {selectedItem ? (
                 <>
@@ -930,11 +924,11 @@ export default function DashboardClient() {
         <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">Invoice preview</h2>
+              <h2 className="text-lg font-semibold">{!selectedAnnotation ? (null) : (annotationTypeLabel[selectedAnnotation.type] + ' ')}Preview</h2>
               <p className="mt-1 text-sm text-zinc-600">
                 {selectedItem ? (
                   <>
-                    <p className="mt-1 text-zinc-700">Current Document: {selectedItem.aliasName} / {selectedItem.pageCount} page(s)</p>
+                    <p className="mt-1 text-zinc-700">Bank Document: {selectedItem.aliasName} - Page {currentPage} / {selectedItem.pageCount}</p>
                   </>
                 ) : (
                   <p className="mt-1 text-zinc-500">Select a document from the left panel to view details.</p>
@@ -953,50 +947,71 @@ export default function DashboardClient() {
                 </>
               ) : (
                 <>
-                  <p className="font-semibold text-zinc-900">Annotation details</p>
+                  <p className="font-semibold text-zinc-900">{annotationTypeLabel[selectedAnnotation.type]}</p>
+                  <p className="mt-1 text-sm text-zinc-500">{selectedAnnotation.category}</p>
                   <div className="mt-4 space-y-4 text-sm text-zinc-700">
                     <div className="grid gap-3">
+                      {isAdmin ? (
                       <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
                         <div>
                           <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
                             Type
                           </label>
-                          <select
-                            value={selectedAnnotation.type}
-                            onChange={(event) =>
-                              updateSelectedAnnotation({ type: event.target.value as Annotation["type"] })
-                            }
-                            className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
-                          >
-                            <option value="DOCUMENT">DOCUMENT</option>
-                            <option value="INVOICE">INVOICE</option>
-                            <option value="COMMENT">COMMENT</option>
-                            <option value="NOT_RELEVANT">NOT_RELEVANT</option>
-                          </select>
+                          {isAdmin ? (
+                            <select
+                              value={selectedAnnotation.type}
+                              onChange={(event) =>
+                                updateSelectedAnnotation({ type: event.target.value as Annotation["type"] })
+                              }
+                              className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
+                            >
+                              <option value="DOCUMENT">DOCUMENT</option>
+                              <option value="INVOICE">INVOICE</option>
+                              <option value="COMMENT">COMMENT</option>
+                              <option value="NOT_RELEVANT">NOT_RELEVANT</option>
+                            </select>
+                          ) : (
+                            <div className="mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+                              {annotationTypeLabel[selectedAnnotation.type]}
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
                             Category
                           </label>
-                          <input
-                            type="text"
-                            value={selectedAnnotation.category}
-                            onChange={(event) => updateSelectedAnnotation({ category: event.target.value })}
-                            className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
-                          />
+                          {isAdmin ? (
+                            <input
+                              type="text"
+                              value={selectedAnnotation.category}
+                              onChange={(event) => updateSelectedAnnotation({ category: event.target.value })}
+                              className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
+                            />
+                          ) : (
+                            <div className="mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+                              {selectedAnnotation.category}
+                            </div>
+                          )}
                         </div>
                       </div>
+                      ) : null}
 
                       <div>
                         <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
                           Comment
                         </label>
-                        <textarea
-                          value={selectedAnnotation.comment}
-                          onChange={(event) => updateSelectedAnnotation({ comment: event.target.value })}
-                          rows={3}
-                          className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
-                        />
+                        {isAdmin ? (
+                          <textarea
+                            value={selectedAnnotation.comment}
+                            onChange={(event) => updateSelectedAnnotation({ comment: event.target.value })}
+                            rows={3}
+                            className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
+                          />
+                        ) : (
+                          <div className="mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 whitespace-pre-wrap">
+                            {selectedAnnotation.comment}
+                          </div>
+                        )}
                       </div>
                     </div>
 
