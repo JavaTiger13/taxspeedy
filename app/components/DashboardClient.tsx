@@ -16,7 +16,7 @@ type Annotation = {
   y: number;
   width: number;
   height: number;
-  type: "DOCUMENT" | "COMMENT" | "NOT_RELEVANT";
+  type: "DOCUMENT" | "INVOICE" | "COMMENT" | "NOT_RELEVANT";
   category: string;
   comment: string;
   linkedDocumentId?: string;
@@ -63,10 +63,13 @@ export default function DashboardClient() {
   const [isLoadingAnnotations, setIsLoadingAnnotations] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [annotationUploadError, setAnnotationUploadError] = useState<string | null>(null);
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
   const [editingAlias, setEditingAlias] = useState("");
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const annotationFileInputRef = useRef<HTMLInputElement | null>(null);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
   const fullscreenIframeRef = useRef<HTMLIFrameElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -151,32 +154,23 @@ export default function DashboardClient() {
     setIsLoadingDocuments(false);
   };
 
-  useEffect(() => {
-    loadDocuments();
-  }, []);
-
-  useEffect(() => {
-    if (!selectedId) {
-      setAnnotations([]);
+  const loadAnnotations = async () => {
+    setIsLoadingAnnotations(true);
+    const response = await fetch("/api/annotations");
+    if (!response.ok) {
+      setIsLoadingAnnotations(false);
       return;
     }
 
-    const loadAnnotations = async () => {
-      setIsLoadingAnnotations(true);
-      const response = await fetch(`/api/annotations?documentId=${selectedId}&page=${currentPage}`);
-      if (!response.ok) {
-        setIsLoadingAnnotations(false);
-        return;
-      }
+    const data = (await response.json()) as Annotation[];
+    setAnnotations(data);
+    setIsLoadingAnnotations(false);
+  };
 
-      const data = (await response.json()) as Annotation[];
-      setAnnotations(data);
-      setSelectedAnnotationId(null);
-      setIsLoadingAnnotations(false);
-    };
-
+  useEffect(() => {
+    loadDocuments();
     loadAnnotations();
-  }, [selectedId, currentPage]);
+  }, []);
 
   const selectedItem = useMemo(
     () => (selectedId ? documents.find((document) => document.id === selectedId) ?? null : null),
@@ -187,6 +181,28 @@ export default function DashboardClient() {
     () => (selectedId ? annotations.filter((annotation) => annotation.documentId === selectedId && annotation.page === currentPage) : []),
     [annotations, selectedId, currentPage]
   );
+
+  const invoiceCountsByDocument = useMemo(() => {
+    return annotations.reduce<Record<string, number>>((counts, annotation) => {
+      if (annotation.type === "INVOICE") {
+        counts[annotation.documentId] = (counts[annotation.documentId] ?? 0) + 1;
+      }
+      return counts;
+    }, {});
+  }, [annotations]);
+
+  const pageInvoiceCounts = useMemo(() => {
+    const counts: Record<number, number> = {};
+    if (!selectedId) return counts;
+
+    annotations.forEach((annotation) => {
+      if (annotation.documentId === selectedId && annotation.type === "INVOICE") {
+        counts[annotation.page] = (counts[annotation.page] ?? 0) + 1;
+      }
+    });
+
+    return counts;
+  }, [annotations, selectedId]);
 
   const selectedAnnotation = useMemo(
     () => currentDocumentAnnotations.find((annotation) => annotation.id === selectedAnnotationId) ?? null,
@@ -231,11 +247,6 @@ export default function DashboardClient() {
     [documents]
   );
 
-  const invoiceDocuments = useMemo(
-    () => documents.filter((document) => document.type === "INVOICE"),
-    [documents]
-  );
-
   useEffect(() => {
     if (selectedAnnotationId) {
       const found = currentDocumentAnnotations.some((annotation) => annotation.id === selectedAnnotationId);
@@ -275,6 +286,7 @@ export default function DashboardClient() {
 
     try {
       const formData = new FormData();
+      formData.append("type", "BANK");
       Array.from(files).forEach((file) => formData.append("files", file));
 
       const response = await fetch("/api/upload", {
@@ -318,6 +330,83 @@ export default function DashboardClient() {
     setEditingDocumentId(null);
     setEditingAlias("");
     await loadDocuments();
+  };
+
+  const handleDocumentDelete = async (documentId: string, aliasName: string) => {
+    const confirmed = window.confirm(`Delete ${aliasName}? This will remove the document and all annotations.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingDocumentId(documentId);
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      if (selectedId === documentId) {
+        setSelectedId(null);
+        setSelectedAnnotationId(null);
+        setCurrentPage(1);
+      }
+
+      await loadDocuments();
+    } finally {
+      setDeletingDocumentId(null);
+    }
+  };
+
+  const handleAnnotationInvoiceUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files?.length || !selectedAnnotationId) {
+      return;
+    }
+
+    setAnnotationUploadError(null);
+    setIsUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("type", "INVOICE");
+      formData.append("files", files[0]);
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        setAnnotationUploadError(errorData?.error || "Invoice upload failed.");
+        return;
+      }
+
+      const uploaded = (await response.json()) as DocumentModel[];
+      if (!uploaded.length) {
+        setAnnotationUploadError("Invoice upload failed.");
+        return;
+      }
+
+      const invoice = uploaded[0];
+      await loadDocuments();
+      await updateSelectedAnnotation({ linkedDocumentId: invoice.id, type: "INVOICE" });
+    } catch (error) {
+      setAnnotationUploadError("Invoice upload failed.");
+    } finally {
+      setIsUploading(false);
+      if (annotationFileInputRef.current) {
+        annotationFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const openAnnotationInvoicePicker = () => {
+    annotationFileInputRef.current?.click();
   };
 
   const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
@@ -565,6 +654,13 @@ export default function DashboardClient() {
                 className="hidden"
                 onChange={handleFilesSelected}
               />
+              <input
+                ref={annotationFileInputRef}
+                type="file"
+                accept="application/pdf"
+                className="hidden"
+                onChange={handleAnnotationInvoiceUpload}
+              />
             </div>
           ) : null}
           <div className="mt-5 space-y-5">
@@ -604,21 +700,39 @@ export default function DashboardClient() {
                                 : "text-zinc-700 hover:text-slate-900 hover:bg-zinc-100"
                             }`}
                           >
-                            {item.aliasName}
+                            <div className="flex items-center justify-between gap-2">
+                              <span>{item.aliasName}</span>
+                              {item.type === "BANK" && invoiceCountsByDocument[item.id] ? (
+                                <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-slate-900 px-2 text-[10px] font-semibold text-white">
+                                  {invoiceCountsByDocument[item.id]}
+                                </span>
+                              ) : null}
+                            </div>
                           </button>
                         )}
                         {isAdmin && editingDocumentId !== item.id ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingDocumentId(item.id);
-                              setEditingAlias(item.aliasName);
-                            }}
-                            className="rounded-full px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100"
-                            aria-label={`Rename ${item.aliasName}`}
-                          >
-                            ✏️
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingDocumentId(item.id);
+                                setEditingAlias(item.aliasName);
+                              }}
+                              className="rounded-full px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100"
+                              aria-label={`Rename ${item.aliasName}`}
+                            >
+                              ✏️
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDocumentDelete(item.id, item.aliasName)}
+                              disabled={deletingDocumentId === item.id}
+                              className="rounded-full px-2 py-1 text-xs text-red-500 transition hover:bg-red-100 disabled:opacity-50"
+                              aria-label={`Delete ${item.aliasName}`}
+                            >
+                              🗑
+                            </button>
+                          </>
                         ) : null}
                       </div>
                     </li>
@@ -667,20 +781,25 @@ export default function DashboardClient() {
               </div>
             </div>
           </div>
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+          <div className="mt-3 flex flex-wrap gap-2 pb-2">
             {selectedItem ? (
               pageList.map((page) => (
                 <button
                   key={page}
                   type="button"
                   onClick={() => setCurrentPage(page)}
-                  className={`min-w-[72px] rounded-2xl border px-3 py-2 text-sm font-semibold transition ${
+                  className={`flex min-w-[44px] items-center justify-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition ${
                     page === currentPage
                       ? "border-slate-900 bg-slate-900 text-white"
                       : "border-zinc-200 bg-white text-zinc-700 hover:border-slate-900 hover:bg-zinc-50"
                   }`}
                 >
-                  Page {page}
+                  <span>{page}</span>
+                  {pageInvoiceCounts[page] ? (
+                    <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-rose-500 px-2 text-[10px] font-semibold text-white">
+                      {pageInvoiceCounts[page]}
+                    </span>
+                  ) : null}
                 </button>
               ))
             ) : (
@@ -727,14 +846,17 @@ export default function DashboardClient() {
                     {currentDocumentAnnotations.map((annotation) => {
                       const renderWidth = imageSize.width || 1;
                       const renderHeight = imageSize.height || 1;
+                      const annotationClasses =
+                        selectedAnnotationId === annotation.id
+                          ? "border-fuchsia-500 bg-fuchsia-500/15"
+                          : annotation.type === "NOT_RELEVANT"
+                          ? "border-zinc-400 bg-slate-900/10 hover:border-zinc-500"
+                          : "border-cyan-500/80 hover:border-slate-900 bg-cyan-500/10";
+
                       return (
                         <div
                           key={annotation.id}
-                          className={`group absolute rounded-sm border-2 bg-cyan-500/10 transition ${
-                            selectedAnnotationId === annotation.id
-                              ? "border-fuchsia-500 bg-fuchsia-500/15"
-                              : "border-cyan-500/80 hover:border-slate-900"
-                          } cursor-pointer`}
+                          className={`group absolute rounded-sm border-2 ${annotationClasses} transition cursor-pointer`}
                           onMouseDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -791,7 +913,7 @@ export default function DashboardClient() {
             <div>
               <h2 className="text-lg font-semibold">Invoice preview</h2>
               <p className="mt-1 text-sm text-zinc-600">
-                Select a linked invoice to inspect it alongside the annotation.
+                Upload an invoice from annotation details to link it and inspect it here.
               </p>
             </div>
           </div>
@@ -801,8 +923,7 @@ export default function DashboardClient() {
                 <p className="font-semibold text-zinc-900">Current document</p>
                 {selectedItem ? (
                   <>
-                    <p className="mt-1 text-zinc-700">{selectedItem.aliasName}</p>
-                    <p className="mt-1 text-sm text-zinc-500">{selectedItem.pageCount} page(s)</p>
+                    <p className="mt-1 text-zinc-700">{selectedItem.aliasName} / {selectedItem.pageCount} page(s)</p>
                   </>
                 ) : (
                   <p className="mt-1 text-zinc-500">Select a document from the left panel to view details.</p>
@@ -833,6 +954,7 @@ export default function DashboardClient() {
                             className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
                           >
                             <option value="DOCUMENT">DOCUMENT</option>
+                            <option value="INVOICE">INVOICE</option>
                             <option value="COMMENT">COMMENT</option>
                             <option value="NOT_RELEVANT">NOT_RELEVANT</option>
                           </select>
@@ -863,37 +985,33 @@ export default function DashboardClient() {
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                          Linked document
-                        </label>
-                        <select
-                          value={selectedAnnotation.linkedDocumentId ?? ""}
-                          onChange={(event) =>
-                            updateSelectedAnnotation({
-                              linkedDocumentId: event.target.value || undefined,
-                            })
-                          }
-                          className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
-                        >
-                          <option value="">No document linked</option>
-                          {invoiceDocuments.map((invoice) => (
-                            <option key={invoice.id} value={invoice.id}>
-                              {invoice.name}
-                            </option>
-                          ))}
-                        </select>
+                        {selectedAnnotation.type === "DOCUMENT" ? (
+                          <div className="space-y-3">
+                            <button
+                              type="button"
+                              onClick={openAnnotationInvoicePicker}
+                              disabled={isUploading}
+                              className="rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500"
+                            >
+                              {isUploading ? "Uploading…" : "Upload Invoice"}
+                            </button>
+                            {annotationUploadError ? (
+                              <p className="text-sm text-red-600">{annotationUploadError}</p>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
 
                     <div className="rounded-2xl bg-zinc-100 p-3 text-sm text-zinc-700">
                       {linkedDocument ? (
-                        <div>
+                        <div className="space-y-2">
                           <p className="font-semibold text-zinc-900">Linked invoice</p>
-                          <p className="mt-1 text-zinc-700">{linkedDocument.name}</p>
-                          <p className="mt-1 text-sm text-zinc-500">{linkedDocument.pageCount} page(s)</p>
+                          <p className="text-sm text-zinc-700">{linkedDocument.aliasName || linkedDocument.name}</p>
+                          <p className="text-xs text-zinc-500">{linkedDocument.pageCount} page(s)</p>
                         </div>
                       ) : (
-                        <div className="text-zinc-500">No document linked</div>
+                        <div className="text-zinc-500">No invoice linked yet.</div>
                       )}
                     </div>
 

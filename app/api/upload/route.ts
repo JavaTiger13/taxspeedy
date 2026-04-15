@@ -53,9 +53,44 @@ async function convertPdfToPng(pdfPath: string, outputDir: string) {
   });
 }
 
+function normalizePageFiles(outputDir: string) {
+  return fs.readdir(outputDir).then((files) => {
+    const pageFiles = files
+      .filter((fileName) => /^page-(\d+)\.png$/.test(fileName))
+      .map((fileName) => {
+        const match = fileName.match(/^page-(\d+)\.png$/);
+        return {
+          fileName,
+          pageNumber: match ? Number(match[1]) : 0,
+        };
+      })
+      .sort((a, b) => a.pageNumber - b.pageNumber);
+
+    return Promise.all(
+      pageFiles.map(async ({ fileName }, index) => {
+        const expectedName = `page-${index + 1}.png`;
+        if (fileName === expectedName) {
+          return expectedName;
+        }
+
+        const currentPath = path.join(outputDir, fileName);
+        const tempPath = path.join(outputDir, `${expectedName}.tmp`);
+        const finalPath = path.join(outputDir, expectedName);
+
+        await fs.rename(currentPath, tempPath);
+        await fs.rename(tempPath, finalPath);
+        return expectedName;
+      })
+    );
+  });
+}
+
 export async function POST(request: Request) {
   const formData = await request.formData();
   const files = formData.getAll("files");
+  const uploadType = String(formData.get("type") ?? "BANK").toUpperCase();
+  const validTypes = new Set(["BANK", "INVOICE"]);
+  const type = validTypes.has(uploadType) ? (uploadType as "BANK" | "INVOICE") : "BANK";
 
   if (!files.length) {
     return NextResponse.json({ error: "No files uploaded." }, { status: 400 });
@@ -86,9 +121,8 @@ export async function POST(request: Request) {
     await saveFile(file, pdfDestination);
 
     await convertPdfToPng(pdfDestination, uploadDir);
-
-    const pageFiles = (await fs.readdir(uploadDir)).filter((fileName) => /^page-\d+\.png$/.test(fileName));
-    const pageCount = pageFiles.length;
+    const normalizedFiles = await normalizePageFiles(uploadDir);
+    const pageCount = normalizedFiles.length;
 
     if (!pageCount) {
       return NextResponse.json({ error: "PDF conversion failed: no page images were generated." }, { status: 500 });
@@ -100,7 +134,7 @@ export async function POST(request: Request) {
         name: originalName,
         aliasName: originalName,
         originalName,
-        type: /invoice/i.test(originalName) ? "INVOICE" : "BANK",
+        type,
         filePath: `/api/documents/${documentId}/pdf`,
         pdfPath: path.relative(process.cwd(), pdfDestination),
         pageCount,

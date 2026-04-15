@@ -4,17 +4,21 @@ import { prisma } from "../../../lib/prisma";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const documentId = url.searchParams.get("documentId");
-  const page = Number(url.searchParams.get("page") || "1");
+  const pageParam = url.searchParams.get("page");
+  const page = pageParam ? Number(pageParam) : undefined;
 
-  if (!documentId) {
-    return NextResponse.json([], { status: 400 });
+  const where: { documentId?: string; page?: number } = {};
+
+  if (documentId) {
+    where.documentId = documentId;
+  }
+
+  if (page !== undefined && !Number.isNaN(page)) {
+    where.page = page;
   }
 
   const annotations = await prisma.annotation.findMany({
-    where: {
-      documentId,
-      page,
-    },
+    where,
     orderBy: {
       createdAt: "asc",
     },
