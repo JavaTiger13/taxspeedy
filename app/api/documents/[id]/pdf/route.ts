@@ -24,8 +24,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return new Response("Original PDF not found", { status: 404 });
   }
 
-  const pdfBuffer = await fs.readFile(pdfPath);
-  return new Response(pdfBuffer, {
+  const fileBuffer = await fs.readFile(pdfPath);
+  const arrayBuffer = fileBuffer.buffer.slice(
+    fileBuffer.byteOffset,
+    fileBuffer.byteOffset + fileBuffer.byteLength
+  );
+
+  return new Response(arrayBuffer, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",

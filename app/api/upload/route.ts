@@ -112,7 +112,7 @@ export async function POST(request: Request) {
     }
 
     const file = rawFile as File;
-    const originalName = file.name;
+    const originalName = file.name.normalize("NFC");
     const documentId = randomUUID();
     const uploadDir = path.join(process.cwd(), "storage", "documents", documentId);
     await fs.mkdir(uploadDir, { recursive: true });

@@ -64,6 +64,11 @@ export default function DashboardClient() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [annotationUploadError, setAnnotationUploadError] = useState<string | null>(null);
+  const [categoryInput, setCategoryInput] = useState("");
+  const [commentInput, setCommentInput] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  const saveTimeoutRef = useRef<number | null>(null);
+  const pendingAnnotationUpdateRef = useRef<Partial<Omit<Annotation, "id" | "x" | "y" | "width" | "height">> | null>(null);
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
   const [editingAlias, setEditingAlias] = useState("");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
@@ -208,6 +213,18 @@ export default function DashboardClient() {
     () => currentDocumentAnnotations.find((annotation) => annotation.id === selectedAnnotationId) ?? null,
     [currentDocumentAnnotations, selectedAnnotationId]
   );
+
+  useEffect(() => {
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = null;
+    }
+
+    pendingAnnotationUpdateRef.current = null;
+    setCategoryInput(selectedAnnotation?.category ?? "");
+    setCommentInput(selectedAnnotation?.comment ?? "");
+    setSaveStatus("saved");
+  }, [selectedAnnotation?.id]);
 
   const annotationTypeLabel: Record<Annotation["type"], string> = {
     DOCUMENT: "Document",
@@ -527,23 +544,54 @@ export default function DashboardClient() {
     }
   };
 
-  const updateSelectedAnnotation = async (updates: Partial<Omit<Annotation, "id" | "x" | "y" | "width" | "height">>) => {
-    if (!selectedAnnotationId) return;
+  const updateSelectedAnnotation = async (
+    updates: Partial<Omit<Annotation, "id" | "x" | "y" | "width" | "height">>,
+    annotationId: string | null = selectedAnnotationId
+  ) => {
+    if (!annotationId) return false;
 
-    const response = await fetch(`/api/annotations/${selectedAnnotationId}`, {
+    const response = await fetch(`/api/annotations/${annotationId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
     });
 
-    if (!response.ok) return;
+    if (!response.ok) return false;
 
     const updatedAnnotation = (await response.json()) as Annotation;
     setAnnotations((current) =>
       current.map((annotation) =>
-        annotation.id === selectedAnnotationId ? updatedAnnotation : annotation
+        annotation.id === annotationId ? updatedAnnotation : annotation
       )
     );
+    return true;
+  };
+
+  const scheduleAnnotationUpdate = (updates: Partial<Omit<Annotation, "id" | "x" | "y" | "width" | "height">>) => {
+    if (!selectedAnnotationId) return;
+
+    setSaveStatus("saving");
+    pendingAnnotationUpdateRef.current = {
+      ...pendingAnnotationUpdateRef.current,
+      ...updates,
+    };
+
+    if (saveTimeoutRef.current) {
+      window.clearTimeout(saveTimeoutRef.current);
+    }
+
+    const annotationId = selectedAnnotationId;
+    saveTimeoutRef.current = window.setTimeout(async () => {
+      saveTimeoutRef.current = null;
+      const pendingUpdates = pendingAnnotationUpdateRef.current;
+      pendingAnnotationUpdateRef.current = null;
+      if (!pendingUpdates) return;
+
+      const success = await updateSelectedAnnotation(pendingUpdates, annotationId);
+      if (success) {
+        setSaveStatus("saved");
+      }
+    }, 750);
   };
 
   const handleUnlinkAnnotation = async () => {
@@ -921,194 +969,220 @@ export default function DashboardClient() {
           </div>
         </section>
         {/* COLUMN 3 */}   
-        <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <section className="flex h-full flex-col rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm gap-3">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">{!selectedAnnotation ? (null) : (annotationTypeLabel[selectedAnnotation.type] + ' ')}Preview</h2>
-              <p className="mt-1 text-sm text-zinc-600">
+              
                 {selectedItem ? (
-                  <>
-                    <p className="mt-1 text-zinc-700">Bank Document: {selectedItem.aliasName} - Page {currentPage} / {selectedItem.pageCount}</p>
-                  </>
+                  <p className="mt-1 text-sm text-zinc-700">Bank Document: {selectedItem.aliasName} - Page {currentPage} / {selectedItem.pageCount}</p>
                 ) : (
-                  <p className="mt-1 text-zinc-500">Select a document from the left panel to view details.</p>
+                  <p className="mt-1 text-sm text-zinc-500">Select a document from the left panel to view details.</p>
                 )}
-              </p>
             </div>
+            {selectedAnnotation?.category ? (
+              <span className="whitespace-nowrap rounded-full border border-zinc-200 bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700">
+                {selectedAnnotation.category}
+              </span>
+            ) : null}
           </div>
-          <div className="mt-5 rounded-3xl bg-zinc-50 p-4 text-sm text-zinc-600">
-            <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-              {!selectedAnnotation ? (
-                <>
-                  <p className="font-semibold text-zinc-900">No annotation selected</p>
-                  <p className="mt-2 text-zinc-700">
-                    Click a rectangle on the document preview to view details here.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <p className="font-semibold text-zinc-900">{annotationTypeLabel[selectedAnnotation.type]}</p>
-                  <p className="mt-1 text-sm text-zinc-500">{selectedAnnotation.category}</p>
-                  <div className="mt-4 space-y-4 text-sm text-zinc-700">
-                    <div className="grid gap-3">
-                      {isAdmin ? (
-                      <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
-                        <div>
-                          <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Type
-                          </label>
-                          {isAdmin ? (
-                            <select
-                              value={selectedAnnotation.type}
-                              onChange={(event) =>
-                                updateSelectedAnnotation({ type: event.target.value as Annotation["type"] })
-                              }
-                              className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
-                            >
-                              <option value="DOCUMENT">DOCUMENT</option>
-                              <option value="INVOICE">INVOICE</option>
-                              <option value="COMMENT">COMMENT</option>
-                              <option value="NOT_RELEVANT">NOT_RELEVANT</option>
-                            </select>
-                          ) : (
-                            <div className="mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
-                              {annotationTypeLabel[selectedAnnotation.type]}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                            Category
-                          </label>
-                          {isAdmin ? (
-                            <input
-                              type="text"
-                              value={selectedAnnotation.category}
-                              onChange={(event) => updateSelectedAnnotation({ category: event.target.value })}
-                              className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
-                            />
-                          ) : (
-                            <div className="mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
-                              {selectedAnnotation.category}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      ) : null}
 
-                      <div>
-                        <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                          Comment
-                        </label>
-                        {isAdmin ? (
-                          <textarea
-                            value={selectedAnnotation.comment}
-                            onChange={(event) => updateSelectedAnnotation({ comment: event.target.value })}
-                            rows={3}
-                            className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 outline-none"
-                          />
-                        ) : (
-                          <div className="mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700 whitespace-pre-wrap">
-                            {selectedAnnotation.comment}
+          {selectedAnnotation && selectedAnnotation.comment ? (
+            <div className="flex shrink-0 mt-2 rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-2 text-sm text-zinc-500 whitespace-pre-wrap">
+                    {selectedAnnotation.comment}
+            </div>
+             ) : null}
+
+            {!selectedAnnotation ? (
+            <div className="mt-5 rounded-3xl bg-zinc-50 p-4 text-sm text-zinc-600">
+                <div className="flex h-full flex-1 flex-col rounded-2xl border border-zinc-200 bg-white p-4">
+                    <p className="font-semibold text-zinc-900">No annotation selected</p>
+                    <p className="mt-2 text-zinc-700">
+                        Click a rectangle on the document preview to view details here.
+                    </p>
+                </div>
+            </div>
+            ) : null}
+                
+            {
+            /** Admin Annotationserfassung */
+            isAdmin && selectedAnnotation ? (
+                <div className="flex flex-col overflow-hidden mt-4 space-y-4 text-sm text-zinc-700 p-5 bg-zinc-50 border-zinc-200 rounded-3xl border-2">
+                    <div className="flex-1 grid gap-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h2 className="text-lg font-semibold">Edit Annotation</h2>
+                            <div className="text-xs font-normal">Position: {(selectedAnnotation.x * 100).toFixed(1)}%, {(selectedAnnotation.y * 100).toFixed(1)}% / Size: {(selectedAnnotation.width * 100).toFixed(1)}% x {(selectedAnnotation.height * 100).toFixed(1)}%</div>
                           </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="rounded-3xl border border-zinc-200 bg-white p-0 text-sm text-zinc-700">
-                      <div className="flex flex-col gap-3 border-b border-zinc-200 bg-zinc-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="space-y-1">
-                          <p className="text-sm font-semibold text-zinc-900">Preview</p>
-                          <p className="text-xs text-zinc-500">Open, download, or print the linked invoice.</p>
-                          {linkedDocument ? (
-                            <p className="text-sm text-zinc-700">{linkedDocument.aliasName || linkedDocument.name} / <span className="text-xs text-zinc-500">{linkedDocument.pageCount} page(s)</span></p>
-                          ) : (
-                            <div className="text-zinc-500">No invoice or document linked yet.</div>
-                          )}
+                          <div className="flex items-center gap-2 text-xs font-semibold">
+                            {saveStatus === "saving" ? (
+                              <span className="flex items-center gap-2 text-orange-400">
+                                <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-orange-400" />
+                                Saving...
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-2 text-emerald-500">
+                                <span>✔</span>
+                                Saved
+                              </span>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-2">
-                            {((selectedAnnotation.type === "DOCUMENT" || selectedAnnotation.type === "INVOICE") && isAdmin) ? (
-                            <div className="space-y-3">
-                                <button
-                                type="button"
-                                onClick={openAnnotationInvoicePicker}
-                                disabled={isUploading}
-                                className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                        
+                        <div className="grid gap-3 sm:grid-cols-[1fr_1fr]">
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                                Type
+                                </label>
+                                <select
+                                    value={selectedAnnotation.type}
+                                    onChange={(event) =>
+                                    updateSelectedAnnotation({ type: event.target.value as Annotation["type"] })
+                                    }
+                                    className="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none"
                                 >
-                                {isUploading ? "Uploading…" : "Upload"}
-                                </button>
-                                {annotationUploadError ? (
-                                <p className="text-sm text-red-600">{annotationUploadError}</p>
-                                ) : null}
+                                    <option value="DOCUMENT">DOCUMENT</option>
+                                    <option value="INVOICE">INVOICE</option>
+                                    <option value="COMMENT">COMMENT</option>
+                                    <option value="NOT_RELEVANT">NOT_RELEVANT</option>
+                                </select>
                             </div>
-                            ) : null }
-                          {isAdmin && linkedDocument ? (
-                            <button
-                              type="button"
-                              onClick={handleUnlinkAnnotation}
-                              className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-50"
-                            >
-                              Unlink
-                            </button>
-                          ) : null}
-                          <button
-                            type="button"
-                            onClick={openFullscreen}
-                            disabled={!linkedDocument}
-                            className="rounded-2xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500"
-                          >
-                            Open fullscreen
-                          </button>
-                          <button
-                            type="button"
-                            onClick={downloadLinkedDocument}
-                            disabled={!linkedDocument}
-                            className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
-                          >
-                            Download
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => printLinkedDocument(previewIframeRef)}
-                            disabled={!linkedDocument}
-                            className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
-                          >
-                            Print
-                          </button>
+                            <div>
+                                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                                Category
+                                </label>
+                                <input
+                                    type="text"
+                                    value={categoryInput}
+                                    onChange={(event) => {
+                                      setCategoryInput(event.target.value);
+                                      scheduleAnnotationUpdate({ category: event.target.value });
+                                    }}
+                                    className="mt-2 w-full rounded-2xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-900 bg-white outline-none"
+                                />
+                            </div>
                         </div>
-                      </div>
-                      {linkedDocument ? (
-                        <div className="h-[360px] overflow-hidden rounded-b-3xl bg-zinc-950">
-                          <iframe
-                            ref={previewIframeRef}
-                            src={linkedDocument.filePath}
-                            title={linkedDocument.name}
-                            className="h-full w-full"
-                          />
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                                Comment
+                            </label>
+                            <textarea
+                            value={commentInput}
+                            onChange={(event) => {
+                              setCommentInput(event.target.value);
+                              scheduleAnnotationUpdate({ comment: event.target.value });
+                            }}
+                            rows={3}
+                            className="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none"
+                            />
                         </div>
-                      ) : (
-                        <div className="flex h-[360px] items-center justify-center rounded-b-3xl border-t border-dashed border-zinc-200 bg-zinc-50 text-zinc-500">
-                          No preview available
+                        <div>
+                            <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                                Linked Document
+                            </label>
+                            <div className="flex gap-5">
+                                <div className="flex-1">
+                                    <div className="flex rounded-2xl bg-zinc-100 p-3 text-sm text-zinc-600">
+                                        {linkedDocument ? (
+                                            <div className="text-zinc-700">{linkedDocument.aliasName || linkedDocument.name} / <span className="text-xs text-zinc-500">{linkedDocument.pageCount} page(s)</span></div>
+                                        ) : (
+                                            <div className="text-zinc-700">No invoice or document linked yet.</div>
+                                        )}
+                                    </div>
+                                    <div className="flex whitespace-nowrap gap-2">
+                                        {((selectedAnnotation.type === "DOCUMENT" || selectedAnnotation.type === "INVOICE") && isAdmin) ? (
+                                        <div>
+                                            <button
+                                            type="button"
+                                            onClick={openAnnotationInvoicePicker}
+                                            disabled={isUploading}
+                                            className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                                            >
+                                            {isUploading ? "Uploading…" : "Upload"}
+                                            </button>
+                                        </div>
+                                        ) : null }
+                                        {linkedDocument ? (
+                                        <button
+                                            type="button"
+                                            onClick={handleUnlinkAnnotation}
+                                            className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100"
+                                        >
+                                            Unlink
+                                        </button>
+                                        ) : null}
+                                    </div>
+                                    </div>
+                                    {annotationUploadError ? (
+                                            <div className="text-sm text-red-600">{annotationUploadError}</div>
+                                    ) : null}
+                            </div>
                         </div>
-                      )}
+                        
                     </div>
-                    {isAdmin ? (
-                        <div className="rounded-2xl bg-zinc-100 p-3 text-xs text-zinc-600">
-                        Position: {(selectedAnnotation.x * 100).toFixed(1)}%, {(selectedAnnotation.y * 100).toFixed(1)}%
-                        <br />
-                        Size: {(selectedAnnotation.width * 100).toFixed(1)}% x {(selectedAnnotation.height * 100).toFixed(1)}%
+                </div>
+            ) : ''}
+          {
+          /**  Iframe and Buttons for PDF */
+          selectedAnnotation ? (
+            <div className="flex-1 h-full min-h-0 rounded-3xl border-2 border-dashed border-zinc-200 bg-zink p-5 text-sm text-zinc-700">
+                <div className="flex flex-col gap-3 bg-zinc-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                        <p className="text-sm font-semibold text-zinc-900">Preview</p>
+                        <p className="text-xs text-zinc-500">
+                            {linkedDocument ? (
+                            'Open, download, or print the linked invoice') : (
+                            'No invoice or document linked yet'
+                            )}
+                            </p>
+                        {linkedDocument ? (
+                        <p className="text-sm text-zinc-700">{linkedDocument.aliasName || linkedDocument.name} / <span className="text-xs text-zinc-500">{linkedDocument.pageCount} page(s)</span></p>
+                        ) : null}
                     </div>
-                    ) : ''}
-                  </div>
-                </>
-              )}
-              <p className="mt-4 rounded-2xl bg-zinc-100 px-3 py-2 text-xs font-medium text-zinc-600">
-                {isAdmin
-                  ? "Admin mode: you can upload documents and create annotations later."
-                  : "Viewer mode: read-only access for document review."}
-              </p>
+                    {linkedDocument ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                        <button
+                        type="button"
+                        onClick={openFullscreen}
+                        disabled={!linkedDocument}
+                        className="rounded-2xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-zinc-300 disabled:text-zinc-500"
+                        >
+                        Open fullscreen
+                        </button>
+                        <button
+                        type="button"
+                        onClick={downloadLinkedDocument}
+                        disabled={!linkedDocument}
+                        className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                        >
+                        Download
+                        </button>
+                        <button
+                        type="button"
+                        onClick={() => printLinkedDocument(previewIframeRef)}
+                        disabled={!linkedDocument}
+                        className="rounded-2xl border border-zinc-200 bg-white px-4 py-2 text-xs font-semibold text-zinc-900 transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+                        >
+                        Print
+                        </button>
+                    </div>): null}
+                </div>
+                {linkedDocument ? (
+                <div className="flex-1 h-full min-h-0 overflow-hidden rounded-b-3xl bg-zinc-950">
+                    <iframe
+                    ref={previewIframeRef}
+                    src={linkedDocument.filePath}
+                    title={linkedDocument.name}
+                    className="h-full w-full"
+                    />
+                </div>
+                ) : (
+                <div className="flex h-[360px] items-center justify-center rounded-b-3xl border-t border-dashed border-zinc-200 bg-zinc-50 text-zinc-500">
+                    No preview available
+                </div>
+                )}
             </div>
-          </div>
+          ): null}
         </section>
       </main>
 
@@ -1117,7 +1191,7 @@ export default function DashboardClient() {
           <div className="relative flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-[2rem] bg-white shadow-2xl">
             <div className="flex flex-col gap-3 border-b border-zinc-200 bg-white px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-lg font-semibold text-zinc-900">Fullscreen invoice preview</p>
+                <p className="text-lg font-semibold text-zinc-900">Fullscreen {selectedAnnotation ? (annotationTypeLabel[selectedAnnotation.type]) : null} preview</p>
                 <p className="mt-1 text-sm text-zinc-500">{linkedDocument.name}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
