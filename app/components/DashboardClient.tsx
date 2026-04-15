@@ -66,11 +66,18 @@ export default function DashboardClient() {
   const [annotationUploadError, setAnnotationUploadError] = useState<string | null>(null);
   const [isAnnotationDropActive, setIsAnnotationDropActive] = useState(false);
   const [isDraggingAnnotation, setIsDraggingAnnotation] = useState(false);
+  const [isResizingAnnotation, setIsResizingAnnotation] = useState(false);
   const dragStartRef = useRef<{
     startX: number;
     startY: number;
     origX: number;
     origY: number;
+  } | null>(null);
+  const resizeStartRef = useRef<{
+    startX: number;
+    startY: number;
+    origWidth: number;
+    origHeight: number;
   } | null>(null);
   const [categoryInput, setCategoryInput] = useState("");
   const [commentInput, setCommentInput] = useState("");
@@ -445,7 +452,7 @@ export default function DashboardClient() {
   };
 
   const handleAnnotationDrop = async (event: DragEvent<HTMLDivElement>) => {
-    if (isDraggingAnnotation) {
+    if (isDraggingAnnotation || isResizingAnnotation) {
       setIsAnnotationDropActive(false);
       return;
     }
@@ -477,7 +484,7 @@ export default function DashboardClient() {
   };
 
   const handleMouseDown = (event: MouseEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !selectedId || isDraggingAnnotation) return;
+    if (event.button !== 0 || !selectedId || isDraggingAnnotation || isResizingAnnotation) return;
     const rect = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - rect.left) / rect.width;
     const y = (event.clientY - rect.top) / rect.height;
@@ -499,6 +506,34 @@ export default function DashboardClient() {
   };
 
   const handleMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    if (isResizingAnnotation && selectedAnnotation && resizeStartRef.current) {
+      const rect = imgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const currentX = (event.clientX - rect.left) / rect.width;
+      const currentY = (event.clientY - rect.top) / rect.height;
+      const dx = currentX - resizeStartRef.current.startX;
+      const dy = currentY - resizeStartRef.current.startY;
+      const minWidth = MIN_ANNOTATION_SIZE / rect.width;
+      const minHeight = MIN_ANNOTATION_SIZE / rect.height;
+      const newWidth = Math.min(
+        Math.max(minWidth, resizeStartRef.current.origWidth + dx),
+        1 - selectedAnnotation.x
+      );
+      const newHeight = Math.min(
+        Math.max(minHeight, resizeStartRef.current.origHeight + dy),
+        1 - selectedAnnotation.y
+      );
+      setAnnotations((current) =>
+        current.map((annotation) =>
+          annotation.id === selectedAnnotation.id
+            ? { ...annotation, width: newWidth, height: newHeight }
+            : annotation
+        )
+      );
+      return;
+    }
+
     if (isDraggingAnnotation && selectedAnnotation && dragStartRef.current) {
       const rect = imgRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -591,6 +626,21 @@ export default function DashboardClient() {
   const pageAnnotationCount = currentDocumentAnnotations.length;
 
   const handleMouseUp = async () => {
+    if (isResizingAnnotation) {
+      setIsResizingAnnotation(false);
+      resizeStartRef.current = null;
+      if (selectedAnnotationId) {
+        const finalAnnotation = annotations.find((annotation) => annotation.id === selectedAnnotationId);
+        if (finalAnnotation) {
+          await updateSelectedAnnotation(
+            { width: finalAnnotation.width, height: finalAnnotation.height },
+            selectedAnnotationId
+          );
+        }
+      }
+      return;
+    }
+
     if (isDraggingAnnotation) {
       setIsDraggingAnnotation(false);
       dragStartRef.current = null;
@@ -1078,6 +1128,30 @@ export default function DashboardClient() {
                                 aria-label="Drag annotation"
                               >
                                 ≡
+                              </button>
+                              <button
+                                type="button"
+                                onMouseDown={(event) => {
+                                  if (event.button !== 0 || !isDraggableAnnotation) return;
+                                  event.stopPropagation();
+                                  event.preventDefault();
+                                  const rect = imgRef.current?.getBoundingClientRect();
+                                  if (!rect) return;
+                                  const startX = (event.clientX - rect.left) / rect.width;
+                                  const startY = (event.clientY - rect.top) / rect.height;
+                                  resizeStartRef.current = {
+                                    startX,
+                                    startY,
+                                    origWidth: annotation.width,
+                                    origHeight: annotation.height,
+                                  };
+                                  setIsResizingAnnotation(true);
+                                  setIsAnnotationDropActive(false);
+                                }}
+                                className="absolute right-1 bottom-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs text-zinc-700 shadow transition duration-150 opacity-0 group-hover:opacity-100 cursor-se-resize hover:bg-slate-100"
+                                aria-label="Resize annotation"
+                              >
+                                ↘
                               </button>
                             </>
                           ) : null}
