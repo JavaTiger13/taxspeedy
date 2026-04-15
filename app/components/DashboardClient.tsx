@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 type UserRole = "Admin" | "Viewer";
 type UserSession = {
@@ -64,6 +64,7 @@ export default function DashboardClient() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [annotationUploadError, setAnnotationUploadError] = useState<string | null>(null);
+  const [isAnnotationDropActive, setIsAnnotationDropActive] = useState(false);
   const [categoryInput, setCategoryInput] = useState("");
   const [commentInput, setCommentInput] = useState("");
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
@@ -385,11 +386,8 @@ export default function DashboardClient() {
     }
   };
 
-  const handleAnnotationInvoiceUpload = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files?.length || !selectedAnnotationId) {
-      return;
-    }
+  const uploadAnnotationInvoiceFile = async (file: File) => {
+    if (!selectedAnnotationId) return;
 
     setAnnotationUploadError(null);
     setIsUploading(true);
@@ -397,7 +395,7 @@ export default function DashboardClient() {
     try {
       const formData = new FormData();
       formData.append("type", "INVOICE");
-      formData.append("files", files[0]);
+      formData.append("files", file);
 
       const response = await fetch("/api/upload", {
         method: "POST",
@@ -418,7 +416,7 @@ export default function DashboardClient() {
 
       const invoice = uploaded[0];
       await loadDocuments();
-      await updateSelectedAnnotation({ linkedDocumentId: invoice.id, type: "INVOICE" });
+      await updateSelectedAnnotation({ linkedDocumentId: invoice.id }, selectedAnnotationId);
     } catch (error) {
       setAnnotationUploadError("Invoice upload failed.");
     } finally {
@@ -427,6 +425,38 @@ export default function DashboardClient() {
         annotationFileInputRef.current.value = "";
       }
     }
+  };
+
+  const handleAnnotationInvoiceUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files?.length) {
+      return;
+    }
+
+    await uploadAnnotationInvoiceFile(files[0]);
+  };
+
+  const handleAnnotationDrop = async (event: DragEvent<HTMLDivElement>) => {
+    if (!isAdmin || !selectedAnnotation || selectedAnnotation.id !== selectedAnnotationId) {
+      setIsAnnotationDropActive(false);
+      return;
+    }
+
+    if (!["DOCUMENT", "INVOICE"].includes(selectedAnnotation.type)) {
+      setIsAnnotationDropActive(false);
+      return;
+    }
+
+    event.preventDefault();
+    setIsAnnotationDropActive(false);
+
+    const file = event.dataTransfer?.files?.[0];
+    if (!file || !(file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"))) {
+      setAnnotationUploadError("Please drop a PDF file.");
+      return;
+    }
+
+    await uploadAnnotationInvoiceFile(file);
   };
 
   const openAnnotationInvoicePicker = () => {
@@ -913,11 +943,32 @@ export default function DashboardClient() {
                           : annotation.type === "NOT_RELEVANT"
                           ? "border-zinc-400 bg-slate-900/10 hover:border-zinc-500"
                           : "border-cyan-500/80 hover:border-slate-900 bg-cyan-500/10";
+                      const isSelectedDropZone =
+                        annotation.id === selectedAnnotationId &&
+                        isAdmin &&
+                        (annotation.type === "DOCUMENT" || annotation.type === "INVOICE");
+                      const dropClasses = isSelectedDropZone && isAnnotationDropActive
+                        ? "border-rose-500 bg-rose-500/15"
+                        : "";
 
                       return (
                         <div
                           key={annotation.id}
-                          className={`group absolute rounded-sm border-2 ${annotationClasses} transition cursor-pointer`}
+                          className={`group absolute rounded-sm border-2 ${annotationClasses} ${dropClasses} transition cursor-pointer`}
+                          onDragEnter={(event) => {
+                            if (!isSelectedDropZone) return;
+                            event.preventDefault();
+                            setIsAnnotationDropActive(true);
+                          }}
+                          onDragOver={(event) => {
+                            if (!isSelectedDropZone) return;
+                            event.preventDefault();
+                          }}
+                          onDragLeave={() => {
+                            if (!isSelectedDropZone) return;
+                            setIsAnnotationDropActive(false);
+                          }}
+                          onDrop={handleAnnotationDrop}
                           onMouseDown={(event) => event.stopPropagation()}
                           onClick={(event) => {
                             event.stopPropagation();
@@ -940,6 +991,11 @@ export default function DashboardClient() {
                           >
                             ×
                           </button>
+                          {isSelectedDropZone && isAnnotationDropActive ? (
+                            <div className="absolute inset-0 flex items-center justify-center rounded-sm bg-white/80 text-xs font-semibold text-rose-600">
+                              Drop invoice here
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}
