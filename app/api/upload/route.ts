@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { spawn, spawnSync } from "child_process";
+import { PDFDocument } from "pdf-lib";
 
 type UploadedDocument = {
   id: string;
@@ -120,12 +121,20 @@ export async function POST(request: Request) {
     const pdfDestination = path.join(uploadDir, "original.pdf");
     await saveFile(file, pdfDestination);
 
-    await convertPdfToPng(pdfDestination, uploadDir);
-    const normalizedFiles = await normalizePageFiles(uploadDir);
-    const pageCount = normalizedFiles.length;
+    let pageCount: number;
 
-    if (!pageCount) {
-      return NextResponse.json({ error: "PDF conversion failed: no page images were generated." }, { status: 500 });
+    if (type === "BANK") {
+      await convertPdfToPng(pdfDestination, uploadDir);
+      const normalizedFiles = await normalizePageFiles(uploadDir);
+      pageCount = normalizedFiles.length;
+
+      if (!pageCount) {
+        return NextResponse.json({ error: "PDF conversion failed: no page images were generated." }, { status: 500 });
+      }
+    } else {
+      const pdfBytes = await fs.readFile(pdfDestination);
+      const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
+      pageCount = pdfDoc.getPageCount();
     }
 
     const document = await prisma.document.create({

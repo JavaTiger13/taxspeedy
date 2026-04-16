@@ -60,7 +60,7 @@ const initialDocuments: SeedDocument[] = [
   },
 ];
 
-export async function GET() {
+export async function GET(request: Request) {
   const count = await prisma.document.count();
 
   if (count === 0) {
@@ -69,10 +69,14 @@ export async function GET() {
     });
   }
 
+  const { searchParams } = new URL(request.url);
+  const typeParam = searchParams.get("type")?.toUpperCase();
+  const validTypes = new Set(["BANK", "INVOICE"]);
+  const typeFilter = typeParam && validTypes.has(typeParam) ? (typeParam as "BANK" | "INVOICE") : undefined;
+
   const documents = await prisma.document.findMany({
-    orderBy: {
-      sortOrder: "asc",
-    },
+    where: typeFilter ? { type: typeFilter } : undefined,
+    orderBy: { sortOrder: "asc" },
   });
 
   return NextResponse.json(documents);

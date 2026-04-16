@@ -54,6 +54,7 @@ export default function DashboardClient() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [documents, setDocuments] = useState<DocumentModel[]>([]);
+  const [allDocuments, setAllDocuments] = useState<DocumentModel[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [drawingRect, setDrawingRect] = useState<DraftAnnotation | null>(null);
@@ -163,7 +164,7 @@ export default function DashboardClient() {
 
   const loadDocuments = async () => {
     setIsLoadingDocuments(true);
-    const response = await fetch("/api/documents");
+    const response = await fetch("/api/documents?type=BANK");
     if (!response.ok) {
       setIsLoadingDocuments(false);
       return;
@@ -172,6 +173,13 @@ export default function DashboardClient() {
     const data = (await response.json()) as DocumentModel[];
     setDocuments(data);
     setIsLoadingDocuments(false);
+  };
+
+  const loadAllDocuments = async () => {
+    const response = await fetch("/api/documents");
+    if (!response.ok) return;
+    const data = (await response.json()) as DocumentModel[];
+    setAllDocuments(data);
   };
 
   const loadAnnotations = async () => {
@@ -189,6 +197,7 @@ export default function DashboardClient() {
 
   useEffect(() => {
     loadDocuments();
+    loadAllDocuments();
     loadAnnotations();
   }, []);
 
@@ -431,6 +440,7 @@ export default function DashboardClient() {
 
       const invoice = uploaded[0];
       await loadDocuments();
+      await loadAllDocuments();
       await updateSelectedAnnotation({ linkedDocumentId: invoice.id }, selectedAnnotationId);
     } catch (error) {
       setAnnotationUploadError("Invoice upload failed.");
@@ -748,7 +758,7 @@ export default function DashboardClient() {
   };
 
   const linkedDocument = selectedAnnotation
-    ? documents.find((document) => document.id === selectedAnnotation.linkedDocumentId)
+    ? allDocuments.find((document) => document.id === selectedAnnotation.linkedDocumentId)
     : null;
 
   if (!user) {
