@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
-import fs from "fs/promises";
-import path from "path";
+import { getStorageProvider } from "../../../../lib/storage";
 import { getRoleFromCookies } from "../../../../lib/auth";
 
 export async function DELETE(request: Request) {
@@ -31,9 +30,9 @@ export async function DELETE(request: Request) {
   console.log("Unused invoices to delete:", ids);
 
   for (const id of ids) {
-    const storagePath = path.join(process.cwd(), "storage", "documents", id);
+    const storagePath = `documents/${id}`;
     try {
-      await fs.rm(storagePath, { recursive: true, force: true });
+      await getStorageProvider().delete(storagePath);
       console.log("Deleted storage for invoice", id);
     } catch (error) {
       console.error("Failed to delete storage for invoice", id, error);

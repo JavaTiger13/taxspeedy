@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
-import fs from "fs/promises";
+import { getStorageProvider } from "../../../../lib/storage";
 import path from "path";
 import { getRoleFromCookies } from "../../../../lib/auth";
 
@@ -35,14 +35,14 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
 
-  const storagePath = path.join(process.cwd(), "storage", "documents", id);
-  console.log("Deleting storage folder for document", id, storagePath);
+  const storageDir = path.dirname(document.pdfPath);
+  console.log("Deleting storage folder for document", id, storageDir);
 
   try {
-    await fs.rm(storagePath, { recursive: true, force: true });
-    console.log("Storage folder deleted", storagePath);
+    await getStorageProvider().delete(storageDir);
+    console.log("Storage folder deleted", storageDir);
   } catch (error) {
-    console.error("Failed to delete storage folder", storagePath, error);
+    console.error("Failed to delete storage folder", storageDir, error);
   }
 
   console.log("Deleting annotations for document", id);

@@ -1,6 +1,6 @@
 import { prisma } from "../../../../../lib/prisma";
+import { getStorageProvider } from "../../../../../lib/storage";
 import fs from "fs/promises";
-import path from "path";
 
 async function fileExists(filePath: string) {
   try {
@@ -19,7 +19,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return new Response("Document not found", { status: 404 });
   }
 
-  const pdfPath = path.join(process.cwd(), document.pdfPath);
+  const pdfPath = getStorageProvider().absolutePath(document.pdfPath);
   if (!(await fileExists(pdfPath))) {
     return new Response("Original PDF not found", { status: 404 });
   }

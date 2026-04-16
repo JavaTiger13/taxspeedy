@@ -4,6 +4,7 @@ import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { getRoleFromCookies } from "../../../lib/auth";
+import { getStorageProvider } from "../../../lib/storage";
 import { spawn, spawnSync } from "child_process";
 import { PDFDocument } from "pdf-lib";
 
@@ -18,9 +19,9 @@ type UploadedDocument = {
   sortOrder: number;
 };
 
-async function saveFile(file: File, destination: string) {
+async function saveFile(file: File, storagePath: string) {
   const buffer = Buffer.from(await file.arrayBuffer());
-  await fs.writeFile(destination, buffer);
+  await getStorageProvider().upload(buffer, storagePath);
 }
 
 function ensurePdftoppmInstalled() {
@@ -119,16 +120,18 @@ export async function POST(request: Request) {
     const file = rawFile as File;
     const originalName = file.name.normalize("NFC");
     const documentId = randomUUID();
-    const uploadDir = path.join(process.cwd(), "storage", "documents", documentId);
-    await fs.mkdir(uploadDir, { recursive: true });
+    const storagePath = `documents/${documentId}/original.pdf`;
+    const absolutePdfPath = getStorageProvider().absolutePath(storagePath);
 
-    const pdfDestination = path.join(uploadDir, "original.pdf");
-    await saveFile(file, pdfDestination);
+    // Ensure directory exists before writing (needed for pdftoppm which runs externally)
+    await fs.mkdir(path.dirname(absolutePdfPath), { recursive: true });
+    await saveFile(file, storagePath);
 
     let pageCount: number;
 
     if (type === "BANK") {
-      await convertPdfToPng(pdfDestination, uploadDir);
+      const uploadDir = path.dirname(absolutePdfPath);
+      await convertPdfToPng(absolutePdfPath, uploadDir);
       const normalizedFiles = await normalizePageFiles(uploadDir);
       pageCount = normalizedFiles.length;
 
@@ -136,7 +139,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "PDF conversion failed: no page images were generated." }, { status: 500 });
       }
     } else {
-      const pdfBytes = await fs.readFile(pdfDestination);
+      const pdfBytes = await fs.readFile(absolutePdfPath);
       const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
       pageCount = pdfDoc.getPageCount();
     }
@@ -149,7 +152,7 @@ export async function POST(request: Request) {
         originalName,
         type,
         filePath: `/api/documents/${documentId}/pdf`,
-        pdfPath: path.relative(process.cwd(), pdfDestination),
+        pdfPath: storagePath,
         pageCount,
         sortOrder: sortOrder++,
       },

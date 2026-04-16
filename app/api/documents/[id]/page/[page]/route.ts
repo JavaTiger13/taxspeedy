@@ -1,4 +1,5 @@
 import { prisma } from "../../../../../../lib/prisma";
+import { getStorageProvider } from "../../../../../../lib/storage";
 import fs from "fs/promises";
 import path from "path";
 
@@ -24,16 +25,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return new Response("Page not found", { status: 404 });
   }
 
-  const pdfPath = path.join(process.cwd(), document.pdfPath);
-  const productionImagePath = path.join(path.dirname(pdfPath), `page-${pageNumber}.png`);
+  const pdfAbsolute = getStorageProvider().absolutePath(document.pdfPath);
+  const pageImagePath = path.join(path.dirname(pdfAbsolute), `page-${pageNumber}.png`);
 
-  if (await fileExists(productionImagePath)) {
-    const imageBuffer = await fs.readFile(productionImagePath);
+  if (await fileExists(pageImagePath)) {
+    const imageBuffer = await fs.readFile(pageImagePath);
     return new Response(imageBuffer, {
       status: 200,
-      headers: {
-        "Content-Type": "image/png",
-      },
+      headers: { "Content-Type": "image/png" },
     });
   }
 
@@ -42,9 +41,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const imageBuffer = await fs.readFile(fallbackPath);
     return new Response(imageBuffer, {
       status: 200,
-      headers: {
-        "Content-Type": "image/png",
-      },
+      headers: { "Content-Type": "image/png" },
     });
   }
 
