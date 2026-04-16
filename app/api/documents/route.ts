@@ -81,3 +81,16 @@ export async function GET(request: Request) {
 
   return NextResponse.json(documents);
 }
+
+export async function PATCH(request: Request) {
+  const body = await request.json();
+  const orders = body.orders as { id: string; sortOrder: number }[];
+
+  await prisma.$transaction(
+    orders.map(({ id, sortOrder }) =>
+      prisma.document.update({ where: { id }, data: { sortOrder } })
+    )
+  );
+
+  return NextResponse.json({ ok: true });
+}

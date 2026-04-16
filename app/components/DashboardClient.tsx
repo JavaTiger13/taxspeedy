@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, Fragment, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 type UserRole = "Admin" | "Viewer";
 type UserSession = {
@@ -68,6 +68,8 @@ export default function DashboardClient() {
   const [isAnnotationDropActive, setIsAnnotationDropActive] = useState(false);
   const [isDraggingAnnotation, setIsDraggingAnnotation] = useState(false);
   const [isResizingAnnotation, setIsResizingAnnotation] = useState(false);
+  const [draggedDocumentId, setDraggedDocumentId] = useState<string | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
   const dragStartRef = useRef<{
     startX: number;
     startY: number;
@@ -407,6 +409,29 @@ export default function DashboardClient() {
       await loadDocuments();
     } finally {
       setDeletingDocumentId(null);
+    }
+  };
+
+  const handleDocumentReorder = async (draggedId: string, targetIndex: number) => {
+    const snapshot = [...documents];
+    const fromIndex = snapshot.findIndex((d) => d.id === draggedId);
+    if (fromIndex === -1 || fromIndex === targetIndex || fromIndex + 1 === targetIndex) return;
+
+    const reordered = [...snapshot];
+    const [moved] = reordered.splice(fromIndex, 1);
+    const insertAt = targetIndex > fromIndex ? targetIndex - 1 : targetIndex;
+    reordered.splice(insertAt, 0, moved);
+    setDocuments(reordered);
+
+    const orders = reordered.map((doc, idx) => ({ id: doc.id, sortOrder: idx + 1 }));
+    const response = await fetch("/api/documents", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orders }),
+    });
+
+    if (!response.ok) {
+      setDocuments(snapshot);
     }
   };
 
@@ -824,7 +849,7 @@ export default function DashboardClient() {
         </div>
       </header>
 
-      <main className="mx-auto grid min-h-[calc(100vh-88px)] max-w-auto gap-6 px-6 py-8 lg:grid-cols-[250px_minmax(0,1fr)_minmax(0,1fr)]">
+      <main className="mx-auto grid min-h-[calc(100vh-88px)] max-w-auto gap-6 px-6 py-8 lg:grid-cols-[270px_minmax(0,1fr)_minmax(0,1fr)]">
         {/* COLUMN 1 */}
         <section className="rounded-3xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between gap-4">
@@ -865,75 +890,131 @@ export default function DashboardClient() {
             {Object.entries(groupedDocuments).map(([section, sectionItems]) => (
               <div key={section}>
                 <p className="text-sm font-semibold text-zinc-900">{section}</p>
-                <ul className="mt-3 space-y-2 border-l border-zinc-200 pl-4 text-sm text-zinc-700">
-                  {sectionItems.map((item) => (
-                    <li key={item.id}>
-                      <div className="flex items-center gap-2">
-                        {editingDocumentId === item.id ? (
-                          <input
-                            type="text"
-                            autoFocus
-                            value={editingAlias}
-                            onChange={(event) => setEditingAlias(event.target.value)}
-                            onBlur={() => handleDocumentRename(item.id, editingAlias)}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                event.preventDefault();
-                                handleDocumentRename(item.id, editingAlias);
-                              }
-                            }}
-                            className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedId(item.id);
-                              setSelectedAnnotationId(null);
-                              setCurrentPage(1);
-                            }}
-                            className={`w-full rounded-2xl px-3 py-2 text-left text-sm transition ${
-                              selectedId === item.id
-                                ? "bg-slate-900 text-white"
-                                : "text-zinc-700 hover:text-slate-900 hover:bg-zinc-100"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span>{item.aliasName}</span>
-                              {item.type === "BANK" && invoiceCountsByDocument[item.id] ? (
-                                <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-slate-900 px-2 text-[10px] font-semibold text-white">
-                                  {invoiceCountsByDocument[item.id]}
-                                </span>
-                              ) : null}
-                            </div>
-                          </button>
-                        )}
-                        {isAdmin && editingDocumentId !== item.id ? (
-                          <>
+                <ul
+                  className="mt-3 border-l border-zinc-200 pl-4 text-sm text-zinc-700"
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropIndex(null);
+                  }}
+                >
+                  {isAdmin ? (
+                    <li
+                      role="none"
+                      className={`overflow-hidden rounded-lg transition-all duration-150 ${
+                        !draggedDocumentId ? "h-0" : dropIndex === 0 ? "h-8 bg-blue-400/50" : "h-1"
+                      }`}
+                      onDragOver={(e) => { e.preventDefault(); setDropIndex(0); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const id = e.dataTransfer.getData("text/plain");
+                        console.log("[reorder] drop at 0", { id });
+                        if (id) handleDocumentReorder(id, 0);
+                        setDropIndex(null);
+                        setDraggedDocumentId(null);
+                      }}
+                    />
+                  ) : null}
+                  {sectionItems.map((item, itemIndex) => (
+                    <Fragment key={item.id}>
+                      <li
+                        draggable={isAdmin && editingDocumentId !== item.id}
+                        onDragStart={(e) => {
+                          setDraggedDocumentId(item.id);
+                          e.dataTransfer.setData("text/plain", item.id);
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragEnd={() => {
+                          setDraggedDocumentId(null);
+                          setDropIndex(null);
+                        }}
+                        className={`mb-0.5 ${draggedDocumentId === item.id ? "opacity-40" : ""}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isAdmin && editingDocumentId !== item.id ? (
+                            <span className="cursor-grab shrink-0 text-zinc-300 hover:text-zinc-500 select-none" aria-hidden>⠿</span>
+                          ) : null}
+                          {editingDocumentId === item.id ? (
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingAlias}
+                              onChange={(event) => setEditingAlias(event.target.value)}
+                              onBlur={() => handleDocumentRename(item.id, editingAlias)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  event.preventDefault();
+                                  handleDocumentRename(item.id, editingAlias);
+                                }
+                              }}
+                              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none"
+                            />
+                          ) : (
                             <button
                               type="button"
                               onClick={() => {
-                                setEditingDocumentId(item.id);
-                                setEditingAlias(item.aliasName);
+                                setSelectedId(item.id);
+                                setSelectedAnnotationId(null);
+                                setCurrentPage(1);
                               }}
-                              className="rounded-full px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100"
-                              aria-label={`Rename ${item.aliasName}`}
+                              className={`w-full rounded-2xl px-3 py-2 text-left text-sm transition ${
+                                selectedId === item.id
+                                  ? "bg-slate-900 text-white"
+                                  : "text-zinc-700 hover:text-slate-900 hover:bg-zinc-100"
+                              }`}
                             >
-                              ✏️
+                              <div className="flex items-center justify-between gap-2">
+                                <span>{item.aliasName}</span>
+                                {item.type === "BANK" && invoiceCountsByDocument[item.id] ? (
+                                  <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-slate-900 px-2 text-[10px] font-semibold text-white">
+                                    {invoiceCountsByDocument[item.id]}
+                                  </span>
+                                ) : null}
+                              </div>
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDocumentDelete(item.id, item.aliasName)}
-                              disabled={deletingDocumentId === item.id}
-                              className="rounded-full px-2 py-1 text-xs text-red-500 transition hover:bg-red-100 disabled:opacity-50"
-                              aria-label={`Delete ${item.aliasName}`}
-                            >
-                              🗑
-                            </button>
-                          </>
-                        ) : null}
-                      </div>
-                    </li>
+                          )}
+                          {isAdmin && editingDocumentId !== item.id ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingDocumentId(item.id);
+                                  setEditingAlias(item.aliasName);
+                                }}
+                                className="rounded-full px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100"
+                                aria-label={`Rename ${item.aliasName}`}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDocumentDelete(item.id, item.aliasName)}
+                                disabled={deletingDocumentId === item.id}
+                                className="rounded-full px-2 py-1 text-xs text-red-500 transition hover:bg-red-100 disabled:opacity-50"
+                                aria-label={`Delete ${item.aliasName}`}
+                              >
+                                🗑
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                      </li>
+                      {isAdmin ? (
+                        <li
+                          role="none"
+                          className={`overflow-hidden rounded-lg transition-all duration-150 ${
+                            !draggedDocumentId ? "h-0" : dropIndex === itemIndex + 1 ? "h-8 bg-blue-400/50" : "h-1"
+                          }`}
+                          onDragOver={(e) => { e.preventDefault(); setDropIndex(itemIndex + 1); }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const id = e.dataTransfer.getData("text/plain");
+                            console.log("[reorder] drop at", itemIndex + 1, { id });
+                            if (id) handleDocumentReorder(id, itemIndex + 1);
+                            setDropIndex(null);
+                            setDraggedDocumentId(null);
+                          }}
+                        />
+                      ) : null}
+                    </Fragment>
                   ))}
                 </ul>
               </div>
