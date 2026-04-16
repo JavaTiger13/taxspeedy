@@ -891,7 +891,7 @@ export default function DashboardClient() {
               <div key={section}>
                 <p className="text-sm font-semibold text-zinc-900">{section}</p>
                 <ul
-                  className="mt-3 border-l border-zinc-200 pl-4 text-sm text-zinc-700"
+                  className="mt-3 border-l border-zinc-200 pl-0 text-sm text-zinc-700"
                   onDragLeave={(e) => {
                     if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropIndex(null);
                   }}
@@ -929,9 +929,6 @@ export default function DashboardClient() {
                         className={`mb-0.5 ${draggedDocumentId === item.id ? "opacity-40" : ""}`}
                       >
                         <div className="flex items-center gap-2">
-                          {isAdmin && editingDocumentId !== item.id ? (
-                            <span className="cursor-grab shrink-0 text-zinc-300 hover:text-zinc-500 select-none" aria-hidden>⠿</span>
-                          ) : null}
                           {editingDocumentId === item.id ? (
                             <input
                               type="text"
@@ -964,7 +961,7 @@ export default function DashboardClient() {
                               <div className="flex items-center justify-between gap-2">
                                 <span>{item.aliasName}</span>
                                 {item.type === "BANK" && invoiceCountsByDocument[item.id] ? (
-                                  <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-slate-900 px-2 text-[10px] font-semibold text-white">
+                                  <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-rose-500 px-2 text-[10px] font-semibold text-white">
                                     {invoiceCountsByDocument[item.id]}
                                   </span>
                                 ) : null}
@@ -979,7 +976,7 @@ export default function DashboardClient() {
                                   setEditingDocumentId(item.id);
                                   setEditingAlias(item.aliasName);
                                 }}
-                                className="rounded-full px-2 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100"
+                                className="rounded-full px-1 py-1 text-xs text-zinc-500 transition hover:bg-zinc-100"
                                 aria-label={`Rename ${item.aliasName}`}
                               >
                                 ✏️
@@ -988,7 +985,7 @@ export default function DashboardClient() {
                                 type="button"
                                 onClick={() => handleDocumentDelete(item.id, item.aliasName)}
                                 disabled={deletingDocumentId === item.id}
-                                className="rounded-full px-2 py-1 text-xs text-red-500 transition hover:bg-red-100 disabled:opacity-50"
+                                className="rounded-full px-1 py-1 text-xs text-red-500 transition hover:bg-red-100 disabled:opacity-50"
                                 aria-label={`Delete ${item.aliasName}`}
                               >
                                 🗑
