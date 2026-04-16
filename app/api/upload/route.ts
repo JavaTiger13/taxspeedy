@@ -3,6 +3,7 @@ import { prisma } from "../../../lib/prisma";
 import fs from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { getRoleFromCookies } from "../../../lib/auth";
 import { spawn, spawnSync } from "child_process";
 import { PDFDocument } from "pdf-lib";
 
@@ -87,6 +88,9 @@ function normalizePageFiles(outputDir: string) {
 }
 
 export async function POST(request: Request) {
+  if (getRoleFromCookies(request) !== "Admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const formData = await request.formData();
   const files = formData.getAll("files");
   const uploadType = String(formData.get("type") ?? "BANK").toUpperCase();

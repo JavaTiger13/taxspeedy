@@ -51,6 +51,8 @@ const sectionName: Record<DocumentType, string> = {
 export default function DashboardClient() {
   const [user, setUser] = useState<UserSession | null>(null);
   const [role, setRole] = useState<UserRole>("Viewer");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [documents, setDocuments] = useState<DocumentModel[]>([]);
@@ -312,13 +314,29 @@ export default function DashboardClient() {
     setSelectedAnnotationId(null);
   }, [selectedId]);
 
-  const handleLogin = (event: FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const session = { name: `${role} User`, role };
-    setUser(session);
+    setLoginError(null);
+    try {
+      const response = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, password }),
+      });
+      if (!response.ok) {
+        setLoginError("Invalid password. Please try again.");
+        return;
+      }
+      const data = await response.json();
+      setUser({ name: `${data.role} User`, role: data.role });
+      setPassword("");
+    } catch {
+      setLoginError("Login failed. Please try again.");
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await fetch("/api/logout", { method: "POST" });
     setUser(null);
   };
 
@@ -792,7 +810,7 @@ export default function DashboardClient() {
         <div className="w-full max-w-md rounded-3xl border border-zinc-200 bg-white p-8 shadow-sm">
           <h1 className="text-2xl font-semibold">Sign in to TaxSpeedy</h1>
           <p className="mt-2 text-sm text-zinc-600">
-            Choose a role to continue. Admin can later manage documents and annotations.
+            Select your role and enter the password to continue.
           </p>
           <form className="mt-8 space-y-6" onSubmit={handleLogin}>
             <div>
@@ -809,6 +827,25 @@ export default function DashboardClient() {
                 <option value="Viewer">Viewer</option>
               </select>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-zinc-700" htmlFor="password">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                className="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-slate-900"
+                placeholder="Enter your password"
+              />
+            </div>
+
+            {loginError && (
+              <p className="rounded-xl bg-red-50 px-4 py-2 text-sm text-red-600">{loginError}</p>
+            )}
 
             <button
               type="submit"

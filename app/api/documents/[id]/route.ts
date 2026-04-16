@@ -2,8 +2,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "../../../../lib/prisma";
 import fs from "fs/promises";
 import path from "path";
+import { getRoleFromCookies } from "../../../../lib/auth";
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (getRoleFromCookies(request) !== "Admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await params;
   const body = await request.json();
   const aliasName = body?.aliasName?.trim();
@@ -21,6 +25,9 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  if (getRoleFromCookies(_request) !== "Admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { id } = await params;
   const document = await prisma.document.findUnique({ where: { id } });
 

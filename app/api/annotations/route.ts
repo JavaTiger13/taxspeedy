@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getRoleFromCookies } from "../../../lib/auth";
 
 export async function GET(request: Request) {
+  if (!getRoleFromCookies(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const url = new URL(request.url);
   const documentId = url.searchParams.get("documentId");
   const pageParam = url.searchParams.get("page");
@@ -28,6 +32,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (getRoleFromCookies(request) !== "Admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const data = await request.json();
   const { documentId, page, x, y, width, height, type, category, comment, linkedDocumentId } = data;
 

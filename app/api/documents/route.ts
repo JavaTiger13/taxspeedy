@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../lib/prisma";
+import { getRoleFromCookies } from "../../../lib/auth";
 
 type SeedDocument = {
   id: string;
@@ -61,6 +62,9 @@ const initialDocuments: SeedDocument[] = [
 ];
 
 export async function GET(request: Request) {
+  if (!getRoleFromCookies(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   const count = await prisma.document.count();
 
   if (count === 0) {
@@ -83,6 +87,9 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  if (getRoleFromCookies(request) !== "Admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const body = await request.json();
   const orders = body.orders as { id: string; sortOrder: number }[];
 
