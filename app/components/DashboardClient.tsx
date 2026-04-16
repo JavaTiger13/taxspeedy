@@ -679,7 +679,7 @@ export default function DashboardClient() {
   };
 
   const updateSelectedAnnotation = async (
-    updates: Partial<Omit<Annotation, "id" | "width" | "height">>,
+    updates: Partial<Omit<Annotation, "id">>,
     annotationId: string | null = selectedAnnotationId
   ) => {
     if (!annotationId) return false;
@@ -822,9 +822,6 @@ export default function DashboardClient() {
               <h2 className="text-lg font-semibold">Navigation</h2>
               <p className="mt-2 text-sm text-zinc-600">Browse bank documents and invoices.</p>
             </div>
-            <span className="rounded-full bg-sky-100 px-3 py-1 text-sm font-medium text-sky-700">
-              {isAdmin ? "Admin access" : "Viewer access"}
-            </span>
           </div>
           {isAdmin ? (
             <div className="mt-5 flex items-center gap-3">
@@ -1050,16 +1047,13 @@ export default function DashboardClient() {
                           ? "bg-blue-400/20 "
                           : "bg-cyan-500/10";
                       
-                      const selectedClasses =
-                        selectedAnnotationId === annotation.id
-                          ? "border-red-400"
-                          : "border-zinc-400";
-                      
-                      const isDraggableAnnotation =
-                        annotation.id === selectedAnnotationId &&
-                        isAdmin;
+                      const isSelectedAnnotation = selectedAnnotationId === annotation.id;
+                      const selectedClasses = isSelectedAnnotation
+                        ? "border-red-400"
+                        : "border-zinc-400";
                       const isSelectedDropZone =
-                        isDraggableAnnotation &&
+                        isSelectedAnnotation &&
+                        isAdmin &&
                         (annotation.type === "DOCUMENT" || annotation.type === "INVOICE");
                       const dropClasses = isSelectedDropZone && isAnnotationDropActive
                         ? "border-orange-500 bg-orange-400/15 shadow-[0_0_20px_rgba(249,115,22,0.18)]"
@@ -1106,9 +1100,10 @@ export default function DashboardClient() {
                               <button
                                 type="button"
                                 onMouseDown={(event) => {
-                                  if (event.button !== 0 || !isDraggableAnnotation) return;
+                                  if (event.button !== 0 || !isAdmin) return;
                                   event.stopPropagation();
                                   event.preventDefault();
+                                  setSelectedAnnotationId(annotation.id);
                                   const rect = imgRef.current?.getBoundingClientRect();
                                   if (!rect) return;
                                   const startX = (event.clientX - rect.left) / rect.width;
@@ -1132,9 +1127,10 @@ export default function DashboardClient() {
                               <button
                                 type="button"
                                 onMouseDown={(event) => {
-                                  if (event.button !== 0 || !isDraggableAnnotation) return;
+                                  if (event.button !== 0 || !isAdmin) return;
                                   event.stopPropagation();
                                   event.preventDefault();
+                                  setSelectedAnnotationId(annotation.id);
                                   const rect = imgRef.current?.getBoundingClientRect();
                                   if (!rect) return;
                                   const startX = (event.clientX - rect.left) / rect.width;
@@ -1148,7 +1144,7 @@ export default function DashboardClient() {
                                   setIsResizingAnnotation(true);
                                   setIsAnnotationDropActive(false);
                                 }}
-                                className="absolute right-1 bottom-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs text-zinc-700 shadow transition duration-150 opacity-0 group-hover:opacity-100 cursor-se-resize hover:bg-slate-100"
+                                className="absolute right-1 bottom-1 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border border-white bg-white/90 text-xs text-zinc-700 shadow transition duration-150 opacity-0 group-hover:opacity-100 cursor-pointer hover:bg-slate-100"
                                 aria-label="Resize annotation"
                               >
                                 ↘
