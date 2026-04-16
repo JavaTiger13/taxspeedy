@@ -48,8 +48,10 @@ const sectionName: Record<DocumentType, string> = {
   INVOICE: "Invoices",
 };
 
-export default function DashboardClient() {
-  const [user, setUser] = useState<UserSession | null>(null);
+export default function DashboardClient({ initialRole }: { initialRole: UserRole | null }) {
+  const [user, setUser] = useState<UserSession | null>(
+    initialRole ? { name: `${initialRole} User`, role: initialRole } : null
+  );
   const [role, setRole] = useState<UserRole>("Viewer");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -338,6 +340,19 @@ export default function DashboardClient() {
   const handleLogout = async () => {
     await fetch("/api/logout", { method: "POST" });
     setUser(null);
+  };
+
+  const handleCleanupInvoices = async () => {
+    if (!confirm("Are you sure you want to delete all unused invoices?")) return;
+    const response = await fetch("/api/documents/cleanup-unused-invoices", { method: "DELETE" });
+    if (!response.ok) {
+      alert("Cleanup failed.");
+      return;
+    }
+    const { deleted } = await response.json();
+    alert(`${deleted} invoice${deleted === 1 ? "" : "s"} deleted.`);
+    loadAllDocuments();
+    loadDocuments();
   };
 
   const handleUploadClick = () => {
@@ -875,6 +890,15 @@ export default function DashboardClient() {
             <span className="rounded-full bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-700">
               {user.role}
             </span>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleCleanupInvoices}
+                className="rounded-full border border-zinc-200 px-3 py-1 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
+              >
+                Cleanup unused invoices
+              </button>
+            )}
             <button
               type="button"
               onClick={handleLogout}
