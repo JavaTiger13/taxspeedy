@@ -119,7 +119,7 @@ export class SupabaseStorageProvider implements StorageProvider {
 }
 
   async getFile(storagePath: string): Promise<Buffer> {
-    console.log("Storage Geeting File : ", storagePath);
+    console.log("Storage Getting File : ", storagePath);
 
     const { data, error } = await supabase.storage
       .from(BUCKET)
