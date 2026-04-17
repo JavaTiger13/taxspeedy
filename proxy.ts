@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getRoleFromCookies } from "./lib/auth";
 
 const PUBLIC_PATHS = ["/api/login", "/api/logout"];
 
@@ -10,8 +11,8 @@ export function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const role = request.cookies.get("role")?.value;
-  if (role !== "Admin" && role !== "Viewer") {
+  const role = getRoleFromCookies(request);
+  if (!role) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

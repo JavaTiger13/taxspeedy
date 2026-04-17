@@ -52,7 +52,7 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
   const [user, setUser] = useState<UserSession | null>(
     initialRole ? { name: `${initialRole} User`, role: initialRole } : null
   );
-  const [role, setRole] = useState<UserRole>("Viewer");
+  const [role, setRole] = useState<UserRole | "">("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -202,6 +202,7 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
   };
 
   useEffect(() => {
+    if (!user) return; // STOP hier!
     loadDocuments();
     loadAllDocuments();
     loadAnnotations();
@@ -319,6 +320,10 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setLoginError(null);
+    if (!role) {
+      setLoginError("Please select a role.");
+      return;
+    }
     try {
       const response = await fetch("/api/login", {
         method: "POST",
@@ -329,9 +334,7 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
         setLoginError("Invalid password. Please try again.");
         return;
       }
-      const data = await response.json();
-      setUser({ name: `${data.role} User`, role: data.role });
-      setPassword("");
+      window.location.reload();
     } catch {
       setLoginError("Login failed. Please try again.");
     }
@@ -339,7 +342,7 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
 
   const handleLogout = async () => {
     await fetch("/api/logout", { method: "POST" });
-    setUser(null);
+    window.location.reload();
   };
 
   const handleCleanupInvoices = async () => {
@@ -349,7 +352,9 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
       alert("Cleanup failed.");
       return;
     }
-    const { deleted } = await response.json();
+    const isJson = response.headers.get("content-type")?.includes("application/json");
+    const data = isJson ? await response.json() : null;
+    const deleted = data?.deleted ?? 0;
     alert(`${deleted} invoice${deleted === 1 ? "" : "s"} deleted.`);
     loadAllDocuments();
     loadDocuments();
@@ -379,7 +384,8 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
+        const isJson = response.headers.get("content-type")?.includes("application/json");
+        const errorData = isJson ? await response.json().catch(() => null) : null;
         setUploadError(errorData?.error || "Upload failed.");
         return;
       }
@@ -485,12 +491,14 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
+        const isJson = response.headers.get("content-type")?.includes("application/json");
+        const errorData = isJson ? await response.json().catch(() => null) : null;
         setAnnotationUploadError(errorData?.error || "Invoice upload failed.");
         return;
       }
 
-      const uploaded = (await response.json()) as DocumentModel[];
+      const isJson = response.headers.get("content-type")?.includes("application/json");
+      const uploaded = isJson ? (await response.json()) as DocumentModel[] : [];
       if (!uploaded.length) {
         setAnnotationUploadError("Invoice upload failed.");
         return;
@@ -835,9 +843,11 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
               <select
                 id="role"
                 value={role}
-                onChange={(event) => setRole(event.target.value as UserRole)}
+                onChange={(event) => setRole(event.target.value as UserRole | "")}
+                required
                 className="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 outline-none transition focus:border-slate-900"
               >
+                <option value="" disabled>Select a role…</option>
                 <option value="Admin">Admin</option>
                 <option value="Viewer">Viewer</option>
               </select>
@@ -866,7 +876,7 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
               type="submit"
               className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
             >
-              Sign in as {role}
+              {role ? `Sign in as ${role}` : "Sign in"}
             </button>
           </form>
         </div>
