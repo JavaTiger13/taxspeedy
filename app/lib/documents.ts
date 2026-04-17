@@ -9,7 +9,7 @@ export type DocumentModel = {
   pageCount: number;
 };
 
-export const documents: DocumentModel[] = [
+/* export const documents: DocumentModel[] = [
   {
     id: "bank-january-2024",
     name: "January 2024",
@@ -42,4 +42,4 @@ export const documents: DocumentModel[] = [
     filePath: "/documents/telekom-invoice.pdf",
     pageCount: 1,
   },
-];
+]; */

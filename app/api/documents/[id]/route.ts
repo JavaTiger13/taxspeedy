@@ -35,6 +35,10 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
 
+  if (document.type === "INVOICE") {
+    return NextResponse.json({ error: "Document Invoice can not be deleted" }, { status: 404 });
+  }
+
   const storageDir = path.dirname(document.pdfPath);
   console.log("Deleting storage folder for document", id, storageDir);
 

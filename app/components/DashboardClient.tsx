@@ -884,7 +884,7 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
               TaxSpeedy
             </p>
-            <h1 className="mt-1 text-2xl font-semibold">Document analysis dashboard</h1>
+            <h1 className="mt-1 text-2xl font-semibold">Steuerjahr 2024</h1>
           </div>
           <div className="flex items-center gap-3">
             <span className="rounded-full bg-zinc-100 px-3 py-1 text-sm font-medium text-zinc-700">

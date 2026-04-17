@@ -7,6 +7,7 @@ import { getRoleFromCookies } from "../../../lib/auth";
 import { getStorageProvider } from "../../../lib/storage";
 import { spawn, spawnSync } from "child_process";
 import { PDFDocument } from "pdf-lib";
+import os from "os";
 
 type UploadedDocument = {
   id: string;
@@ -19,11 +20,6 @@ type UploadedDocument = {
   sortOrder: number;
 };
 
-async function saveFile(file: File, storagePath: string) {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  await getStorageProvider().upload(buffer, storagePath);
-}
-
 function ensurePdftoppmInstalled() {
   const result = spawnSync("pdftoppm", ["-v"]);
   const error = result.error as NodeJS.ErrnoException | undefined;
@@ -33,6 +29,10 @@ function ensurePdftoppmInstalled() {
       "The system tool pdftoppm is not installed. Install Poppler on macOS with: brew install poppler"
     );
   }
+}
+
+async function createTempDir() {
+  return fs.mkdtemp(path.join(os.tmpdir(), "upload-"));
 }
 
 async function convertPdfToPng(pdfPath: string, outputDir: string) {
@@ -121,44 +121,70 @@ export async function POST(request: Request) {
     const originalName = file.name.normalize("NFC");
     const documentId = randomUUID();
     const storagePath = `documents/${documentId}/original.pdf`;
-    const absolutePdfPath = getStorageProvider().absolutePath(storagePath);
 
-    // Ensure directory exists before writing (needed for pdftoppm which runs externally)
-    await fs.mkdir(path.dirname(absolutePdfPath), { recursive: true });
-    await saveFile(file, storagePath);
+    const storage = getStorageProvider();
+    const tmpDir = await createTempDir();
 
-    let pageCount: number;
+    try {
+      const tmpPdfPath = path.join(tmpDir, "input.pdf");
 
-    if (type === "BANK") {
-      const uploadDir = path.dirname(absolutePdfPath);
-      await convertPdfToPng(absolutePdfPath, uploadDir);
-      const normalizedFiles = await normalizePageFiles(uploadDir);
-      pageCount = normalizedFiles.length;
+      // 1. File lokal speichern
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await fs.writeFile(tmpPdfPath, buffer);
 
-      if (!pageCount) {
-        return NextResponse.json({ error: "PDF conversion failed: no page images were generated." }, { status: 500 });
+      // 2. PDF in Storage speichern
+      await storage.upload(buffer, storagePath);
+
+      let pageCount: number;
+
+      if (type === "BANK") {
+        await convertPdfToPng(tmpPdfPath, tmpDir);
+
+        const normalizedFiles = await normalizePageFiles(tmpDir);
+        pageCount = normalizedFiles.length;
+
+        if (!pageCount) {
+          throw new Error("PDF conversion failed");
+        }
+
+        for (const fileName of normalizedFiles) {
+          const filePath = path.join(tmpDir, fileName);
+          const pageBuffer = await fs.readFile(filePath);
+
+          await storage.upload(
+            pageBuffer,
+            `documents/${documentId}/${fileName}`
+          );
+        }
+      } else {
+        const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+        pageCount = pdfDoc.getPageCount();
       }
-    } else {
-      const pdfBytes = await fs.readFile(absolutePdfPath);
-      const pdfDoc = await PDFDocument.load(pdfBytes, { ignoreEncryption: true });
-      pageCount = pdfDoc.getPageCount();
+
+      const document = await prisma.document.create({
+        data: {
+          id: documentId,
+          name: originalName,
+          aliasName: originalName,
+          originalName,
+          type,
+          filePath: `/api/documents/${documentId}/pdf`,
+          pdfPath: storagePath,
+          pageCount,
+          sortOrder: sortOrder++,
+        },
+      });
+
+      createdDocuments.push(document as UploadedDocument);
+
     }
-
-    const document = await prisma.document.create({
-      data: {
-        id: documentId,
-        name: originalName,
-        aliasName: originalName,
-        originalName,
-        type,
-        filePath: `/api/documents/${documentId}/pdf`,
-        pdfPath: storagePath,
-        pageCount,
-        sortOrder: sortOrder++,
-      },
-    });
-
-    createdDocuments.push(document as UploadedDocument);
+    finally {
+      try {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      } catch (e) {
+        console.warn("Failed to cleanup temp dir", tmpDir, e);
+      }
+    }
   }
 
   if (!createdDocuments.length) {

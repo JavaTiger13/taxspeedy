@@ -1,16 +1,5 @@
 import { prisma } from "../../../../../../lib/prisma";
 import { getStorageProvider } from "../../../../../../lib/storage";
-import fs from "fs/promises";
-import path from "path";
-
-async function fileExists(filePath: string) {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string; page: string }> }) {
   const { id, page } = await params;
@@ -25,25 +14,22 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return new Response("Page not found", { status: 404 });
   }
 
-  const pdfAbsolute = getStorageProvider().absolutePath(document.pdfPath);
-  const pageImagePath = path.join(path.dirname(pdfAbsolute), `page-${pageNumber}.png`);
+  try {
+    const storage = getStorageProvider();
 
-  if (await fileExists(pageImagePath)) {
-    const imageBuffer = await fs.readFile(pageImagePath);
-    return new Response(imageBuffer, {
+    // derive path from PDF path
+    // e.g. documents/abc123/original.pdf => documents/abc123/page-1.png
+    const basePath = document.pdfPath.replace(/\/[^\/]+$/, "");
+    const pagePath = `${basePath}/page-${pageNumber}.png`;
+
+    const imageBuffer = await storage.getFile(pagePath);
+
+    return new Response(new Uint8Array(imageBuffer), {
       status: 200,
       headers: { "Content-Type": "image/png" },
     });
+  } catch (error) {
+    console.error(error);
+    return new Response("Page image not found", { status: 404 });
   }
-
-  const fallbackPath = path.join(process.cwd(), "public", "mock-pages", `${id}-page-${pageNumber}.png`);
-  if (await fileExists(fallbackPath)) {
-    const imageBuffer = await fs.readFile(fallbackPath);
-    return new Response(imageBuffer, {
-      status: 200,
-      headers: { "Content-Type": "image/png" },
-    });
-  }
-
-  return new Response("Page image not found", { status: 404 });
 }
