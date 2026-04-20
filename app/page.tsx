@@ -6,5 +6,8 @@ export default async function Home() {
   const cookieStore = await cookies();
   const raw = cookieStore.get("auth")?.value ?? "";
   const initialRole = verifySignedValue(raw);
+  
+  console.log("DB:", process.env.DATABASE_URL);
+
   return <DashboardClient initialRole={initialRole} />;
 }

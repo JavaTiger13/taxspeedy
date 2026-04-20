@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 
 /**
  * StorageProvider defines the contract for all file storage operations.
- * Swap implementations (e.g. SupabaseStorageProvider) by changing getStorageProvider().
+ * Swap implementations by changing STORAGE_PROVIDER env var.
  */
 export interface StorageProvider {
   /**
@@ -21,23 +21,14 @@ export interface StorageProvider {
    */
   delete(storagePath: string): Promise<void>;
 
-  /**
-   * Resolve a relative storage path to an absolute filesystem path.
-   * For local storage only – used by serving routes to read file bytes.
-   * 
-   * absolutePath(storagePath: string): string;
-   */
-
-  /** loads File from storage */
+  /** Load a file from storage and return its contents as a Buffer. */
   getFile(storagePath: string): Promise<Buffer>;
 }
 
 
+// ─── Local filesystem implementation ─────────────────────────────────────────
 
-
-// ─── Local filesystem implementation ────────────────────────────────────────
-
-/* const STORAGE_ROOT = path.join(process.cwd(), "storage");
+const STORAGE_ROOT = path.join(process.cwd(), "storage");
 
 class LocalStorageProvider implements StorageProvider {
   async upload(buffer: Buffer, storagePath: string): Promise<string> {
@@ -52,13 +43,14 @@ class LocalStorageProvider implements StorageProvider {
     await fs.rm(absolute, { recursive: true, force: true });
   }
 
-  absolutePath(storagePath: string): string {
-    return path.join(STORAGE_ROOT, storagePath);
+  async getFile(storagePath: string): Promise<Buffer> {
+    const absolute = path.join(STORAGE_ROOT, storagePath);
+    return fs.readFile(absolute);
   }
-} */
+}
 
 
-// ─── Supabase Storage implementation ────────────────────────────────────────
+// ─── Supabase Storage implementation ─────────────────────────────────────────
 
 const supabase = createClient(
   process.env.SUPABASE_URL!,
@@ -85,24 +77,14 @@ export class SupabaseStorageProvider implements StorageProvider {
     return storagePath;
   }
 
-/*   async delete(storagePath: string): Promise<void> {
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .remove([storagePath]);
-
-    if (error) {
-      throw new Error(`Delete failed: ${error.message}`);
-    }
-  } */
-
   async delete(storagePath: string): Promise<void> {
-    console.log("Storage Deleting : ", storagePath);
+    console.log("Storage Deleting: ", storagePath);
     const { data, error } = await supabase.storage
-        .from(BUCKET)
-        .list(storagePath, { limit: 1000 });
+      .from(BUCKET)
+      .list(storagePath, { limit: 1000 });
 
     if (error) {
-        throw new Error(`List failed: ${error.message}`);
+      throw new Error(`List failed: ${error.message}`);
     }
 
     if (!data || data.length === 0) return;
@@ -110,16 +92,16 @@ export class SupabaseStorageProvider implements StorageProvider {
     const filesToDelete = data.map((file) => `${storagePath}/${file.name}`);
 
     const { error: deleteError } = await supabase.storage
-        .from(BUCKET)
-        .remove(filesToDelete);
+      .from(BUCKET)
+      .remove(filesToDelete);
 
     if (deleteError) {
-        throw new Error(`Delete failed: ${deleteError.message}`);
+      throw new Error(`Delete failed: ${deleteError.message}`);
     }
-}
+  }
 
   async getFile(storagePath: string): Promise<Buffer> {
-    console.log("Storage Getting File : ", storagePath);
+    console.log("Storage Getting File: ", storagePath);
 
     const { data, error } = await supabase.storage
       .from(BUCKET)
@@ -133,34 +115,39 @@ export class SupabaseStorageProvider implements StorageProvider {
     return Buffer.from(arrayBuffer);
   }
 
-  private getContentType(path: string): string {
-    if (path.endsWith(".pdf")) return "application/pdf";
-    if (path.endsWith(".png")) return "image/png";
-    if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  private getContentType(filePath: string): string {
+    if (filePath.endsWith(".pdf")) return "application/pdf";
+    if (filePath.endsWith(".png")) return "image/png";
+    if (filePath.endsWith(".jpg") || filePath.endsWith(".jpeg")) return "image/jpeg";
     return "application/octet-stream";
   }
 }
 
 
-
-// ─── Entry point ─────────────────────────────────────────────────────────────
+// ─── Entry point ──────────────────────────────────────────────────────────────
 
 let _provider: StorageProvider | null = null;
 
 /**
- * Returns the active storage provider.
- * To switch to cloud storage, replace LocalStorageProvider with e.g. SupabaseStorageProvider.
+ * Returns the active storage provider, selected by STORAGE_PROVIDER env var.
+ * STORAGE_PROVIDER="SUPABASE" → SupabaseStorageProvider
+ * STORAGE_PROVIDER="LOCAL" or unset → LocalStorageProvider (default)
  */
-/* export function getStorageProvider(): StorageProvider {
+export function getStorageProvider(): StorageProvider {
   if (!_provider) {
-    _provider = new LocalStorageProvider();
-  }
-  return _provider;
- */
-
-  export function getStorageProvider(): StorageProvider {
-    if (!_provider) {
-    _provider = new SupabaseStorageProvider();
+    const mode = process.env.STORAGE_PROVIDER;
+    if (mode === "SUPABASE") {
+      console.log("Using SUPABASE storage provider");
+      _provider = new SupabaseStorageProvider();
+    } else {
+      console.log("Using LOCAL storage provider");
+      _provider = new LocalStorageProvider();
+    }
   }
   return _provider;
 }
+
+
+
+
+
