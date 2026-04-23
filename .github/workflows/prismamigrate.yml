@@ -1,0 +1,40 @@
+name: Run Prisma Migrations
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/*'
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: npm install
+
+      - name: Generate Prisma Client
+        run: npx prisma generate
+
+      # PREVIEW
+      - name: Run migrations (preview)
+        if: startsWith(github.ref, 'refs/heads/feature/')
+        env:
+          DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
+        run: npx prisma migrate deploy
+
+      # PRODUCTION
+      - name: Run migrations (prod)
+        if: github.ref == 'refs/heads/main'
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate deploy
