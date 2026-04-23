@@ -26,11 +26,11 @@ jobs:
         run: npx prisma generate
 
       # PREVIEW
-      - name: Run migrations (preview)
-        if: startsWith(github.ref, 'refs/heads/feature/')
-        env:
-          DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
-        run: npx prisma migrate deploy
+      #- name: Run migrations (preview)
+      #  if: startsWith(github.ref, 'refs/heads/feature/')
+      #  env:
+      #    DATABASE_URL: ${{ secrets.PREVIEW_DATABASE_URL }}
+      #  run: npx prisma migrate deploy
 
       # PRODUCTION
       - name: Run migrations (prod)
