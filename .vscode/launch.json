@@ -1,0 +1,33 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "DEV (development)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run start:development"
+    },
+    {
+      "name": "PREVIEW (preview env)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run start:preview"
+    },
+    {
+      "name": "PRODUCTION (real production)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run start:production"
+    },
+    {
+      "name": "PRODUCTION LOCAL (production mode + local overrides)",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run start:production:local"
+    }
+  ]
+}

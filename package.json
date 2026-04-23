@@ -5,11 +5,36 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    
     "start": "next start",
-    "lint": "eslint"
+    "start:development": "next dev",
+    "start:production": "next build && next start",
+    "start:preview": "dotenv -e .env.preview -- next build && dotenv -e .env.preview -- next start",
+    "start:production:local": "dotenv -e .env.production.local -- next build && dotenv -e .env.production.local -- next start",
+
+    "lint": "eslint",
+
+    "prisma:generate": "prisma generate",
+    "prisma:studio": "prisma studio",
+
+    "db:migrate:status": "prisma migrate status",
+
+    "db:migrate:dev": "prisma migrate dev",
+    "db:reset:dev": "prisma migrate reset",
+
+    "db:migrate:preview": "dotenv -e .env.preview -- prisma migrate deploy",
+
+    "db:migrate:prod": "dotenv -e .env.production -- prisma migrate deploy",
+
+    "db:seed:dev": "prisma db seed",
+    "db:seed:preview": "dotenv -e .env.preview -- prisma db seed",
+    "db:seed:prod": "dotenv -e .env.production -- prisma db seed",
+
+    "db:check": "node scripts/check-env.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.3",
+    "dotenv-cli": "^11.0.0",
     "next": "16.2.3",
     "pdf-lib": "^1.17.1",
     "pdf-poppler": "^0.2.3",
