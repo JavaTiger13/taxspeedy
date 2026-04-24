@@ -22,12 +22,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const basePath = document.pdfPath.replace(/\/[^\/]+$/, "");
     const pagePath = `${basePath}/page-${pageNumber}.png`;
 
-    const imageBuffer = await storage.getFile(pagePath);
+    const url = await storage.getPublicUrl(pagePath);
 
-    return new Response(new Uint8Array(imageBuffer), {
-      status: 200,
-      headers: { "Content-Type": "image/png" },
-    });
+    return Response.json({ url });
   } catch (error) {
     console.error(error);
     return new Response("Page image not found", { status: 404 });

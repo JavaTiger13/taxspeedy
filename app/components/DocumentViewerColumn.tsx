@@ -18,8 +18,10 @@ type Props = {
   isDraggingAnnotation: boolean;
   isAnnotationDropActive: boolean;
   imgRef: React.RefObject<HTMLImageElement | null>;
+  pageImageUrl: string | null;
   onSetCurrentPage: (page: number) => void;
   onImageLoad: () => void;
+  onImageError: () => void;
   onMouseDown: (event: MouseEvent<HTMLDivElement>) => void;
   onMouseMove: (event: MouseEvent<HTMLDivElement>) => void;
   onMouseUp: () => void;
@@ -48,8 +50,10 @@ export default function DocumentViewerColumn({
   isDraggingAnnotation,
   isAnnotationDropActive,
   imgRef,
+  pageImageUrl,
   onSetCurrentPage,
   onImageLoad,
+  onImageError,
   onMouseDown,
   onMouseMove,
   onMouseUp,
@@ -147,10 +151,11 @@ export default function DocumentViewerColumn({
             <>
               <img
                 ref={imgRef}
-                src={`/api/documents/${selectedId}/page/${currentPage}`}
+                src={pageImageUrl ?? undefined}
                 alt={`${selectedItem.aliasName} page ${currentPage}`}
                 className="w-full h-auto object-contain block"
                 onLoad={onImageLoad}
+                onError={onImageError}
               />
               <div
                 className="absolute top-0 left-1/2 -translate-x-1/2"

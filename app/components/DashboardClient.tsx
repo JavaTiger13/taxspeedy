@@ -53,6 +53,7 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
   const [editingAlias, setEditingAlias] = useState("");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [isFullscreenOpen, setIsFullscreenOpen] = useState(false);
+  const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const annotationFileInputRef = useRef<HTMLInputElement | null>(null);
   const previewIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -183,6 +184,27 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
     setCurrentPage(1);
     setSelectedAnnotationId(null);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedId) { setPageImageUrl(null); return; }
+    setPageImageUrl(null);
+    fetch(`/api/documents/${selectedId}/page/${currentPage}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then(({ url }: { url: string }) => setPageImageUrl(url))
+      .catch(() => setPageImageUrl(null));
+  }, [selectedId, currentPage]);
+
+  const handlePageImageError = async () => {
+    if (!selectedId) return;
+    try {
+      const res = await fetch(`/api/documents/${selectedId}/page/${currentPage}`);
+      if (!res.ok) return;
+      const { url }: { url: string } = await res.json();
+      setPageImageUrl(url);
+    } catch {
+      // silently ignore
+    }
+  };
 
   // ─── Data loaders ────────────────────────────────────────────────────────────
 
@@ -757,8 +779,10 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
           isDraggingAnnotation={isDraggingAnnotation}
           isAnnotationDropActive={isAnnotationDropActive}
           imgRef={imgRef}
+          pageImageUrl={pageImageUrl}
           onSetCurrentPage={setCurrentPage}
           onImageLoad={handleImageLoad}
+          onImageError={handlePageImageError}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}

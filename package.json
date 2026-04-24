@@ -8,7 +8,7 @@
     
     "start": "next start",
     "start:development": "next dev",
-    "start:production": "next build && next start",
+    "start:production": "dotenv -e .env.production -- next build && dotenv -e .env.production -- next start",
     "start:preview": "dotenv -e .env.preview -- next build && dotenv -e .env.preview -- next start",
     "start:production:local": "dotenv -e .env.production.local -- next build && dotenv -e .env.production.local -- next start",
 

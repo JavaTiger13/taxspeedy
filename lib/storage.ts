@@ -23,6 +23,12 @@ export interface StorageProvider {
 
   /** Load a file from storage and return its contents as a Buffer. */
   getFile(storagePath: string): Promise<Buffer>;
+
+  /**
+   * Return a URL the browser can use to load the file.
+   * Local: API route. Supabase: signed URL (1 hour TTL).
+   */
+  getPublicUrl(storagePath: string): Promise<string>;
 }
 
 
@@ -46,6 +52,10 @@ class LocalStorageProvider implements StorageProvider {
   async getFile(storagePath: string): Promise<Buffer> {
     const absolute = path.join(STORAGE_ROOT, storagePath);
     return fs.readFile(absolute);
+  }
+
+  async getPublicUrl(storagePath: string): Promise<string> {
+    return `/api/storage/${storagePath}`;
   }
 }
 
@@ -113,6 +123,18 @@ export class SupabaseStorageProvider implements StorageProvider {
 
     const arrayBuffer = await data.arrayBuffer();
     return Buffer.from(arrayBuffer);
+  }
+
+  async getPublicUrl(storagePath: string): Promise<string> {
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(storagePath, 3600);
+
+    if (error || !data?.signedUrl) {
+      throw new Error(`Failed to create signed URL: ${error?.message}`);
+    }
+
+    return data.signedUrl;
   }
 
   private getContentType(filePath: string): string {
