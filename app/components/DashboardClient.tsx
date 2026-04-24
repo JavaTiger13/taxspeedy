@@ -1,6 +1,21 @@
 "use client";
 
 import { ChangeEvent, DragEvent, FormEvent, MouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+
+// Module-level cache: key = `${documentId}-${page}`, value = url
+// Persists across renders; cleared on expiry errors.
+const pageUrlCache = new Map<string, string>();
+
+async function fetchPageUrl(documentId: string, page: number): Promise<string> {
+  const key = `${documentId}-${page}`;
+  const cached = pageUrlCache.get(key);
+  if (cached) return cached;
+  const res = await fetch(`/api/documents/${documentId}/page/${page}`);
+  if (!res.ok) throw new Error("Failed to fetch page URL");
+  const { url }: { url: string } = await res.json();
+  pageUrlCache.set(key, url);
+  return url;
+}
 import { Annotation, DocumentModel, DocumentType, DraftAnnotation, MIN_ANNOTATION_SIZE, UserRole, UserSession } from "./types";
 import NavigationColumn from "./NavigationColumn";
 import DocumentViewerColumn from "./DocumentViewerColumn";
@@ -187,19 +202,19 @@ export default function DashboardClient({ initialRole }: { initialRole: UserRole
 
   useEffect(() => {
     if (!selectedId) { setPageImageUrl(null); return; }
-    setPageImageUrl(null);
-    fetch(`/api/documents/${selectedId}/page/${currentPage}`)
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then(({ url }: { url: string }) => setPageImageUrl(url))
-      .catch(() => setPageImageUrl(null));
+    let cancelled = false;
+    fetchPageUrl(selectedId, currentPage)
+      .then((url) => { if (!cancelled) setPageImageUrl(url); })
+      .catch(() => { if (!cancelled) setPageImageUrl(null); });
+    return () => { cancelled = true; };
   }, [selectedId, currentPage]);
 
   const handlePageImageError = async () => {
     if (!selectedId) return;
+    // Remove stale cached entry so fetchPageUrl re-fetches
+    pageUrlCache.delete(`${selectedId}-${currentPage}`);
     try {
-      const res = await fetch(`/api/documents/${selectedId}/page/${currentPage}`);
-      if (!res.ok) return;
-      const { url }: { url: string } = await res.json();
+      const url = await fetchPageUrl(selectedId, currentPage);
       setPageImageUrl(url);
     } catch {
       // silently ignore
